@@ -1,0 +1,36 @@
+# MedTech Device OS - Yocto Configuration
+
+MACHINE = "qemuarm64"
+DISTRO = "poky"
+
+# Build parallel settings
+BB_NUMBER_THREADS = "${@oe.utils.cpu_count()}"
+PARALLEL_MAKE = "-j ${@oe.utils.cpu_count()}"
+
+# Package formats
+PACKAGE_CLASSES = "package_rpm"
+
+# Image output formats (ext4 required for CI artifact verification)
+IMAGE_FSTYPES = "ext4 tar.bz2"
+
+# Image features (ssh-server-openssh adds openssh server)
+IMAGE_FEATURES += "ssh-server-openssh"
+
+# Extra image content (debug-tweaks: allow root login without password)
+EXTRA_IMAGE_FEATURES += "debug-tweaks"
+
+# Downloads and cache
+DL_DIR = "${TOPDIR}/../downloads"
+SSTATE_DIR = "${TOPDIR}/../sstate-cache"
+
+# Additional packages
+IMAGE_INSTALL:append = " \
+    python3 \
+    python3-pip \
+    openssh \
+    curl \
+    wget \
+    nano \
+    htop \
+"
+

@@ -1,0 +1,44 @@
+# Yocto build artifacts
+yocto/build/*
+!yocto/build/conf/
+yocto/build/conf/*
+!yocto/build/conf/bblayers.conf
+yocto/poky/
+yocto/downloads/
+yocto/sstate-cache/
+*.bbappend~
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SBOM (generated, but track template)
+sbom/*.json
+!sbom/.gitkeep
+
+# Environment
+.env
+.env.local

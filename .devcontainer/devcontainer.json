@@ -1,0 +1,54 @@
+{
+  "name": "Yocto Device OS (ARM/QEMU)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "eamodio.gitlens",
+        "github.copilot",
+        "github.copilot-chat"
+      ],
+      "settings": {
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "ms-python.python"
+        }
+      }
+    }
+  },
+  "postCreateCommand": "bash /workspace/scripts/setup-devenv.sh",
+  "forwardPorts": [2222, 1883, 5005],
+  "portsAttributes": {
+    "2222": {
+      "label": "QEMU SSH",
+      "onAutoForward": "notify"
+    },
+    "1883": {
+      "label": "MQTT Broker",
+      "onAutoForward": "notify"
+    },
+    "5005": {
+      "label": "Debug Port",
+      "onAutoForward": "notify"
+    }
+  },
+  "remoteUser": "root",
+  "remoteEnv": {
+    "YOCTO_BRANCH": "kirkstone",
+    "MACHINE": "qemuarm64",
+    "DISTRO": "poky",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "mounts": [],
+  "runArgs": [
+    "--privileged",
+    "--dns=8.8.8.8",
+    "--dns=8.8.4.4"
+  ]
+}

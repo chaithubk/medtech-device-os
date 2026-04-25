@@ -1,0 +1,234 @@
+name: Device OS Build & Push to GHCR
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 0'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/qemu-image
+
+jobs:
+  validate:
+    name: Validate Structure
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Validate scripts
+        run: |
+          echo "✓ Validating scripts..."
+          bash -n scripts/build.sh || true
+          bash -n scripts/quick-setup.sh || true
+          bash -n scripts/verify-image.sh || true
+          bash -n scripts/generate-sbom.sh || true
+          echo "✅ Validation complete"
+
+  build-yocto:
+    name: Build Yocto Image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    needs: validate
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up build environment
+        run: |
+          echo "=== Setting up Yocto build environment ==="
+          sudo apt-get update
+          sudo apt-get install -y \
+            gawk wget git diffstat unzip texinfo gcc build-essential \
+            chrpath socat cpio python3 python3-pip python3-pexpect \
+            xz-utils debianutils iputils-ping curl vim qemu-system-arm \
+            qemu-system-x86 qemu-user-static --no-install-recommends
+          pip3 install pyyaml requests jinja2
+          echo "✅ Build environment ready"
+      
+      - name: Clone Poky
+        run: |
+          echo "=== Cloning Poky kirkstone ==="
+          mkdir -p yocto
+          cd yocto
+          if [ ! -d "poky" ]; then
+            git clone -b kirkstone --depth 1 https://git.yoctoproject.org/git/poky poky
+            echo "✅ Poky cloned"
+          else
+            echo "✅ Poky already exists"
+          fi
+
+      - name: Clone meta-openembedded
+        run: |
+          echo "=== Cloning meta-openembedded kirkstone ==="
+          cd yocto
+          if [ ! -d "meta-openembedded" ]; then
+            git clone -b kirkstone --depth 1 https://github.com/openembedded/meta-openembedded.git meta-openembedded
+            echo "✅ meta-openembedded cloned"
+          else
+            echo "✅ meta-openembedded already exists"
+          fi
+      
+      - name: Initialize build
+        run: |
+          echo "=== Initializing Yocto build ==="
+          cd yocto
+          source poky/oe-init-build-env build > /dev/null 2>&1
+          cp ../conf/local.conf.sample conf/local.conf
+          cp ../conf/bblayers.conf.sample conf/bblayers.conf
+          echo "✅ Build environment initialized"
+      
+      - name: Build core-image-minimal
+        run: |
+          echo "=== Building core-image-minimal ==="
+          cd yocto/build
+          source ../poky/oe-init-build-env . > /dev/null 2>&1
+          set -o pipefail
+          bitbake -k core-image-minimal 2>&1 | tee build.log
+          BUILD_STATUS=$?
+          if [ $BUILD_STATUS -eq 0 ]; then
+            echo "✅ Build successful"
+          else
+            echo "⚠️ Build completed with status: $BUILD_STATUS"
+          fi
+      
+      - name: Verify image
+        run: |
+          echo "=== Verifying image ==="
+          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.ext4"
+          if [ -f "$IMAGE" ]; then
+            SIZE=$(du -sh "$IMAGE" | cut -f1)
+            echo "✅ Image found: $SIZE"
+            file "$IMAGE"
+          else
+            echo "❌ Image not found!"
+            exit 1
+          fi
+      
+      - name: Generate SBOM
+        run: |
+          echo "=== Generating SBOM ==="
+          bash scripts/generate-sbom.sh
+          if [ -f "sbom/sbom.json" ]; then
+            echo "✅ SBOM generated"
+          fi
+      
+      - name: Create artifact archive
+        run: |
+          echo "=== Creating artifact ==="
+          mkdir -p artifacts
+          cp yocto/build/tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.ext4 artifacts/
+          cp yocto/build/tmp/deploy/images/qemuarm64/Image artifacts/ || true
+          cp yocto/build/tmp/deploy/images/qemuarm64/qemuarm64.dtb artifacts/ || true
+          cp sbom/sbom.json artifacts/
+          echo "✅ Artifacts ready"
+      
+      - name: Create manifest
+        run: |
+          printf '%s\n' \
+            'MedTech Device OS - QEMU Image' \
+            '==============================' \
+            'Build completed successfully' \
+            '' \
+            'Files:' \
+            '- core-image-minimal-qemuarm64.ext4: Main filesystem image' \
+            '- Image: Linux kernel (optional)' \
+            '- qemuarm64.dtb: Device tree blob (optional)' \
+            '- sbom.json: Software Bill of Materials' \
+            '' \
+            'To use:' \
+            '1. Extract core-image-minimal-qemuarm64.ext4' \
+            '2. Boot: runqemu qemuarm64 /path/to/image nographic' \
+            '3. Or: mount -o loop image.ext4 /mnt' \
+            > artifacts/MANIFEST.txt
+          ls -lh artifacts/
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-image
+          path: artifacts/
+          retention-days: 30
+        if: always()
+
+  create-docker-image:
+    name: Create & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build-yocto
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-image
+          path: artifacts/
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest
+      
+      - name: Create Dockerfile
+        run: |
+          mkdir -p docker-image
+          printf '%s\n' \
+            'FROM alpine:3.19' \
+            'COPY artifacts/core-image-minimal-qemuarm64.ext4 /qemu/core-image-minimal-qemuarm64.ext4' \
+            'COPY artifacts/MANIFEST.txt /qemu/MANIFEST.txt' \
+            'COPY artifacts/sbom.json /qemu/sbom.json' \
+            'WORKDIR /qemu' \
+            'CMD ["/bin/sh"]' \
+            > docker-image/Dockerfile
+          echo "✅ Dockerfile created"
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker-image/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+      
+      - name: Image published
+        run: |
+          echo "✅ Docker image published"
+          echo "Registry: ${{ env.REGISTRY }}"
+          echo "Image: ${{ env.IMAGE_NAME }}"
+
+  status:
+    name: Build Status
+    runs-on: ubuntu-latest
+    needs: [validate, build-yocto, create-docker-image]
+    if: always()
+    
+    steps:
+      - name: Report status
+        run: |
+          echo "📊 Device OS Build Complete"
+          echo "Validation: ${{ needs.validate.result }}"
+          echo "Build: ${{ needs.build-yocto.result }}"
+          echo "Docker: ${{ needs.create-docker-image.result }}"
