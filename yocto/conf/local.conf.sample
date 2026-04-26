@@ -1,29 +1,43 @@
-# MedTech Device OS - Yocto Configuration
+# MedTech Device OS - Stage 1 Build Configuration
 
 MACHINE = "qemuarm64"
 DISTRO = "poky"
 
-# Build parallel settings
-BB_NUMBER_THREADS = "${@oe.utils.cpu_count()}"
-PARALLEL_MAKE = "-j ${@oe.utils.cpu_count()}"
-
-# Package formats
-PACKAGE_CLASSES = "package_rpm"
-
-# Image output formats (ext4 required for CI artifact verification)
+# Image type
 IMAGE_FSTYPES = "ext4 tar.bz2"
 
-# Image features (ssh-server-openssh adds openssh server)
-IMAGE_FEATURES += "ssh-server-openssh"
+# Build parallel settings
+BB_NUMBER_THREADS = "4"
+PARALLEL_MAKE = "-j 4"
 
-# Extra image content (debug-tweaks: allow root login without password)
+# Package formats
+PACKAGE_CLASSES = "package_ipk"
+
+# Image features
+IMAGE_FEATURES += "ssh-server-openssh"
 EXTRA_IMAGE_FEATURES += "debug-tweaks"
 
-# Downloads and cache
+# Systemd as init manager
+DISTRO_FEATURES:append = " systemd"
+VIRTUAL-RUNTIME_init_manager = "systemd"
+VIRTUAL-RUNTIME_initscripts = ""
+
+# Qt6 and display support
+DISTRO_FEATURES:append = " opengl"
+DISTRO_FEATURES:remove = "wayland x11"
+
+# IPv4/IPv6 networking
+DISTRO_FEATURES:append = " ipv4 ipv6"
+
+# Downloads and sstate cache
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
 
-# Additional packages
+# SBOM generation
+INHERIT += "sbom"
+SBOM_FORMAT = "json"
+
+# Additional base packages
 IMAGE_INSTALL:append = " \
     python3 \
     python3-pip \

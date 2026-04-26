@@ -28,6 +28,31 @@ jobs:
           bash -n scripts/generate-sbom.sh || true
           echo "✅ Validation complete"
 
+      - name: Validate layer structure
+        run: |
+          echo "✓ Validating meta-medtech layer structure..."
+          required_files=(
+            "yocto/meta-medtech/conf/layer.conf"
+            "yocto/meta-medtech/recipes-core/medtech-system/medtech-system.bb"
+            "yocto/meta-medtech/recipes-services/medtech-vitals-publisher/vitals-publisher_1.0.bb"
+            "yocto/meta-medtech/recipes-services/medtech-edge-analytics/edge-analytics_1.0.bb"
+            "yocto/meta-medtech/recipes-services/medtech-clinician-ui/clinician-ui_1.0.bb"
+            "yocto/meta-medtech/recipes-support/mosquitto/mosquitto_%.bbappend"
+            "yocto/meta-medtech/recipes-support/python3-paho-mqtt/python3-paho-mqtt_1.6.1.bb"
+            "yocto/meta-medtech/recipes-support/tensorflow-lite/tensorflow-lite_2.14.0.bb"
+            "yocto/meta-medtech/recipes-image/core-image-medtech/core-image-medtech.bb"
+            "yocto/meta-medtech/classes/medtech-image.bbclass"
+          )
+          for f in "${required_files[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ MISSING: $f"
+              exit 1
+            fi
+          done
+          echo "✅ Layer structure validated"
+
   build-yocto:
     name: Build Yocto Image
     runs-on: ubuntu-22.04
@@ -81,13 +106,13 @@ jobs:
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
           echo "✅ Build environment initialized"
       
-      - name: Build core-image-minimal
+      - name: Build core-image-medtech
         run: |
-          echo "=== Building core-image-minimal ==="
+          echo "=== Building core-image-medtech ==="
           cd yocto/build
           source ../poky/oe-init-build-env . > /dev/null 2>&1
           set -o pipefail
-          bitbake -k core-image-minimal 2>&1 | tee build.log
+          bitbake -k core-image-medtech 2>&1 | tee build.log
           BUILD_STATUS=$?
           if [ $BUILD_STATUS -eq 0 ]; then
             echo "✅ Build successful"
@@ -98,7 +123,7 @@ jobs:
       - name: Verify image
         run: |
           echo "=== Verifying image ==="
-          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.ext4"
+          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4"
           if [ -f "$IMAGE" ]; then
             SIZE=$(du -sh "$IMAGE" | cut -f1)
             echo "✅ Image found: $SIZE"
@@ -107,6 +132,22 @@ jobs:
             echo "❌ Image not found!"
             exit 1
           fi
+
+      - name: Verify services in image manifest
+        run: |
+          echo "=== Verifying MedTech services in image ==="
+          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.manifest"
+          if [ -f "$MANIFEST" ]; then
+            for svc in mosquitto vitals-publisher edge-analytics clinician-ui; do
+              if grep -q "$svc" "$MANIFEST"; then
+                echo "  ✅ $svc included in image"
+              else
+                echo "  ⚠️  $svc not found in manifest"
+              fi
+            done
+          else
+            echo "⚠️  Manifest not found, skipping service check"
+          fi
       
       - name: Generate SBOM
         run: |
@@ -114,13 +155,14 @@ jobs:
           bash scripts/generate-sbom.sh
           if [ -f "sbom/sbom.json" ]; then
             echo "✅ SBOM generated"
+            cat sbom/sbom.json | python3 -m json.tool > /dev/null && echo "✅ SBOM JSON valid"
           fi
       
       - name: Create artifact archive
         run: |
           echo "=== Creating artifact ==="
           mkdir -p artifacts
-          cp yocto/build/tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.ext4 artifacts/
+          cp yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4 artifacts/
           cp yocto/build/tmp/deploy/images/qemuarm64/Image artifacts/ || true
           cp yocto/build/tmp/deploy/images/qemuarm64/qemuarm64.dtb artifacts/ || true
           cp sbom/sbom.json artifacts/
@@ -129,20 +171,27 @@ jobs:
       - name: Create manifest
         run: |
           printf '%s\n' \
-            'MedTech Device OS - QEMU Image' \
-            '==============================' \
+            'MedTech Device OS - Stage 1 QEMU Image' \
+            '=======================================' \
             'Build completed successfully' \
             '' \
-            'Files:' \
-            '- core-image-minimal-qemuarm64.ext4: Main filesystem image' \
-            '- Image: Linux kernel (optional)' \
-            '- qemuarm64.dtb: Device tree blob (optional)' \
-            '- sbom.json: Software Bill of Materials' \
+            'Services:' \
+            '- mosquitto          : MQTT broker (port 1883)' \
+            '- vitals-publisher   : Publishes patient vitals every 10s' \
+            '- edge-analytics     : Sepsis detection via TFLite' \
+            '- clinician-ui       : Qt6 clinical dashboard (offscreen)' \
             '' \
-            'To use:' \
-            '1. Extract core-image-minimal-qemuarm64.ext4' \
-            '2. Boot: runqemu qemuarm64 /path/to/image nographic' \
-            '3. Or: mount -o loop image.ext4 /mnt' \
+            'Files:' \
+            '- core-image-medtech-qemuarm64.ext4 : Main filesystem image' \
+            '- Image                              : Linux kernel (optional)' \
+            '- qemuarm64.dtb                      : Device tree blob (optional)' \
+            '- sbom.json                          : CycloneDX Software Bill of Materials' \
+            '' \
+            'Quick Start:' \
+            '1. runqemu qemuarm64 core-image-medtech nographic' \
+            '2. Login: root (no password)' \
+            '3. Check services: systemctl status mosquitto medtech-vitals-publisher' \
+            '4. Monitor MQTT: mosquitto_sub -t "medtech/#" -v' \
             > artifacts/MANIFEST.txt
           ls -lh artifacts/
       
@@ -196,7 +245,7 @@ jobs:
           mkdir -p docker-image
           printf '%s\n' \
             'FROM alpine:3.19' \
-            'COPY artifacts/core-image-minimal-qemuarm64.ext4 /qemu/core-image-minimal-qemuarm64.ext4' \
+            'COPY artifacts/core-image-medtech-qemuarm64.ext4 /qemu/core-image-medtech-qemuarm64.ext4' \
             'COPY artifacts/MANIFEST.txt /qemu/MANIFEST.txt' \
             'COPY artifacts/sbom.json /qemu/sbom.json' \
             'WORKDIR /qemu' \
@@ -228,7 +277,7 @@ jobs:
     steps:
       - name: Report status
         run: |
-          echo "📊 Device OS Build Complete"
+          echo "📊 MedTech Device OS Stage 1 Build Complete"
           echo "Validation: ${{ needs.validate.result }}"
           echo "Build: ${{ needs.build-yocto.result }}"
           echo "Docker: ${{ needs.create-docker-image.result }}"

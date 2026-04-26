@@ -11,16 +11,16 @@ echo "=== MedTech Device OS Image Verification ==="
 echo ""
 
 # Check 1: Image exists
-if [ ! -f "$DEPLOY_DIR/core-image-minimal-qemuarm64.ext4" ]; then
-    echo "❌ Image not found: $DEPLOY_DIR/core-image-minimal-qemuarm64.ext4"
-    echo "   Run: bitbake core-image-minimal"
+if [ ! -f "$DEPLOY_DIR/core-image-medtech-qemuarm64.ext4" ]; then
+    echo "❌ Image not found: $DEPLOY_DIR/core-image-medtech-qemuarm64.ext4"
+    echo "   Run: bitbake core-image-medtech"
     exit 1
 fi
 
 echo "✅ Image file exists"
 
 # Check 2: Image size
-IMAGE_SIZE=$(du -sh "$DEPLOY_DIR/core-image-minimal-qemuarm64.ext4" | cut -f1)
+IMAGE_SIZE=$(du -sh "$DEPLOY_DIR/core-image-medtech-qemuarm64.ext4" | cut -f1)
 echo "✅ Image size: $IMAGE_SIZE"
 
 # Check 3: Kernel
@@ -38,12 +38,13 @@ else
     echo "⚠️  Device tree not found"
 fi
 
-# Check 5: MANIFEST-kernel
-if [ -f "$DEPLOY_DIR/core-image-minimal-qemuarm64.manifest" ]; then
+# Check 5: MANIFEST
+MANIFEST="$DEPLOY_DIR/core-image-medtech-qemuarm64.manifest"
+if [ -f "$MANIFEST" ]; then
     echo "✅ Image manifest found"
     echo ""
     echo "=== Installed Packages (Sample) ==="
-    head -10 "$DEPLOY_DIR/core-image-minimal-qemuarm64.manifest"
+    head -10 "$MANIFEST"
     echo "... (see full list in manifest file)"
 else
     echo "⚠️  Manifest not found"
@@ -52,36 +53,23 @@ fi
 echo ""
 echo "=== Checking for medtech services ==="
 
-# Check for mosquitto
-if grep -q "mosquitto" "$DEPLOY_DIR/core-image-minimal-qemuarm64.manifest" 2>/dev/null; then
-    echo "✅ MQTT (Mosquitto) included"
-else
-    echo "⚠️  MQTT not found (add to IMAGE_INSTALL)"
-fi
-
-# Check for python
-if grep -q "python3" "$DEPLOY_DIR/core-image-minimal-qemuarm64.manifest" 2>/dev/null; then
-    echo "✅ Python 3 included"
-else
-    echo "⚠️  Python 3 not found (add to IMAGE_INSTALL)"
-fi
-
-# Check for openssh
-if grep -q "openssh" "$DEPLOY_DIR/core-image-minimal-qemuarm64.manifest" 2>/dev/null; then
-    echo "✅ SSH (OpenSSH) included"
-else
-    echo "⚠️  SSH not found (add to IMAGE_INSTALL)"
-fi
+for svc in mosquitto vitals-publisher edge-analytics clinician-ui; do
+    if grep -q "$svc" "$MANIFEST" 2>/dev/null; then
+        echo "✅ $svc included"
+    else
+        echo "⚠️  $svc not found (check recipe dependencies)"
+    fi
+done
 
 echo ""
 echo "=== Image Ready ==="
 echo ""
 echo "To boot in QEMU:"
 echo "  cd $BUILD_DIR"
-echo "  runqemu qemuarm64 core-image-minimal nographic"
+echo "  runqemu qemuarm64 core-image-medtech nographic"
 echo ""
-echo "Inside QEMU, test services:"
-echo "  mosquitto -v          # Start MQTT broker"
-echo "  python3 --version     # Check Python"
-echo "  systemctl status ssh  # Check SSH"
+echo "Inside QEMU, sanity checks:"
+echo "  systemctl status mosquitto medtech-vitals-publisher medtech-edge-analytics medtech-clinician-ui"
+echo "  mosquitto_sub -t 'medtech/#' -v   # Should receive vitals + predictions"
+echo "  journalctl -u medtech-vitals-publisher -n 50"
 echo ""

@@ -32,9 +32,9 @@ if [ ! -f "conf/bblayers.conf" ]; then
     echo "Created conf/bblayers.conf from template"
 fi
 
-# Build minimal image
-echo "Building core-image-minimal..."
-bitbake core-image-minimal
+# Build core-image-medtech
+echo "Building core-image-medtech..."
+bitbake core-image-medtech
 
 echo "✅ Build complete!"
-echo "Image: tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.tar.bz2"
+echo "Image: tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4"

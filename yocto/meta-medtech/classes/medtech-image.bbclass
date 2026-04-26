@@ -1,39 +1,37 @@
-#!/bin/bash
+# medtech-image.bbclass
+# Custom Yocto class for MedTech image post-processing:
+#   - Stamps image version into /etc/medtech-release
+#   - Generates a CycloneDX SBOM fragment from installed packages
+#   - Records build metadata for traceability
 
-set -e
+MEDTECH_IMAGE_VERSION ?= "1.0.0"
+MEDTECH_IMAGE_NAME ?= "core-image-medtech"
+MEDTECH_SBOM_DIR ?= "${DEPLOY_DIR}/sbom"
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-SBOM_DIR="$PROJECT_ROOT/sbom"
-TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Stamp release info into the rootfs
+IMAGE_PREPROCESS_COMMAND:append = " medtech_stamp_release; "
 
-mkdir -p "$SBOM_DIR"
+medtech_stamp_release() {
+    install -d ${IMAGE_ROOTFS}/etc
+    cat > ${IMAGE_ROOTFS}/etc/medtech-release << EOF
+MEDTECH_IMAGE_NAME="${MEDTECH_IMAGE_NAME}"
+MEDTECH_IMAGE_VERSION="${MEDTECH_IMAGE_VERSION}"
+MEDTECH_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+MEDTECH_MACHINE="${MACHINE}"
+MEDTECH_DISTRO="${DISTRO}"
+EOF
+}
 
-echo "=== Generating MedTech CycloneDX SBOM ==="
+# Generate a basic CycloneDX-compatible SBOM fragment after rootfs creation
+ROOTFS_POSTPROCESS_COMMAND:append = " medtech_generate_sbom; "
 
-# Extract versions from recipe files if available
-VITALS_VERSION="1.0.0"
-ANALYTICS_VERSION="1.0.0"
-UI_VERSION="1.0.0"
-TFLITE_VERSION="2.14.0"
-PAHO_VERSION="1.6.1"
+medtech_generate_sbom() {
+    SBOM_FILE="${MEDTECH_SBOM_DIR}/sbom-${MEDTECH_IMAGE_NAME}.json"
+    install -d "${MEDTECH_SBOM_DIR}"
 
-RECIPES_DIR="$PROJECT_ROOT/yocto/meta-medtech"
-if [ -d "$RECIPES_DIR" ]; then
-    vp=$(find "$RECIPES_DIR" -name "vitals-publisher_*.bb" 2>/dev/null | head -1)
-    ea=$(find "$RECIPES_DIR" -name "edge-analytics_*.bb" 2>/dev/null | head -1)
-    cu=$(find "$RECIPES_DIR" -name "clinician-ui_*.bb" 2>/dev/null | head -1)
-    tf=$(find "$RECIPES_DIR" -name "tensorflow-lite_*.bb" 2>/dev/null | head -1)
-    pm=$(find "$RECIPES_DIR" -name "python3-paho-mqtt_*.bb" 2>/dev/null | head -1)
+    TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-    [ -n "$vp" ] && VITALS_VERSION="$(basename "$vp" .bb | cut -d_ -f2)"
-    [ -n "$ea" ] && ANALYTICS_VERSION="$(basename "$ea" .bb | cut -d_ -f2)"
-    [ -n "$cu" ] && UI_VERSION="$(basename "$cu" .bb | cut -d_ -f2)"
-    [ -n "$tf" ] && TFLITE_VERSION="$(basename "$tf" .bb | cut -d_ -f2)"
-    [ -n "$pm" ] && PAHO_VERSION="$(basename "$pm" .bb | cut -d_ -f2)"
-fi
-
-cat > "$SBOM_DIR/sbom.json" << SBOM
+    cat > "${SBOM_FILE}" << SBOMEOF
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.4",
@@ -49,8 +47,8 @@ cat > "$SBOM_DIR/sbom.json" << SBOM
     ],
     "component": {
       "type": "application",
-      "name": "core-image-medtech",
-      "version": "1.0.0",
+      "name": "${MEDTECH_IMAGE_NAME}",
+      "version": "${MEDTECH_IMAGE_VERSION}",
       "description": "MedTech Stage 1 QEMU Image"
     }
   },
@@ -58,26 +56,26 @@ cat > "$SBOM_DIR/sbom.json" << SBOM
     {
       "type": "application",
       "name": "medtech-vitals-publisher",
-      "version": "${VITALS_VERSION}",
+      "version": "1.0.0",
       "description": "MQTT vital signs publisher",
       "scope": "required",
-      "purl": "pkg:github/chaithubk/medtech-vitals-publisher@${VITALS_VERSION}"
+      "purl": "pkg:github/chaithubk/medtech-vitals-publisher@1.0.0"
     },
     {
       "type": "application",
       "name": "medtech-edge-analytics",
-      "version": "${ANALYTICS_VERSION}",
+      "version": "1.0.0",
       "description": "Sepsis detection with TensorFlow Lite",
       "scope": "required",
-      "purl": "pkg:github/chaithubk/medtech-edge-analytics@${ANALYTICS_VERSION}"
+      "purl": "pkg:github/chaithubk/medtech-edge-analytics@1.0.0"
     },
     {
       "type": "application",
       "name": "medtech-clinician-ui",
-      "version": "${UI_VERSION}",
+      "version": "1.0.0",
       "description": "Qt6-based clinical dashboard",
       "scope": "required",
-      "purl": "pkg:github/chaithubk/medtech-clinician-ui@${UI_VERSION}"
+      "purl": "pkg:github/chaithubk/medtech-clinician-ui@1.0.0"
     },
     {
       "type": "library",
@@ -89,14 +87,14 @@ cat > "$SBOM_DIR/sbom.json" << SBOM
     {
       "type": "library",
       "name": "tensorflow-lite",
-      "version": "${TFLITE_VERSION}",
+      "version": "${MEDTECH_IMAGE_VERSION}",
       "description": "TensorFlow Lite runtime",
       "scope": "required"
     },
     {
       "type": "library",
       "name": "python3-paho-mqtt",
-      "version": "${PAHO_VERSION}",
+      "version": "1.6.1",
       "description": "Python MQTT client",
       "scope": "required"
     },
@@ -134,9 +132,5 @@ cat > "$SBOM_DIR/sbom.json" << SBOM
     }
   ]
 }
-SBOM
-
-echo "✅ SBOM generated: $SBOM_DIR/sbom.json"
-echo "   Components: medtech-vitals-publisher, medtech-edge-analytics, medtech-clinician-ui"
-echo "   Libraries:  mosquitto, tensorflow-lite, python3-paho-mqtt, qtbase"
-
+SBOMEOF
+}

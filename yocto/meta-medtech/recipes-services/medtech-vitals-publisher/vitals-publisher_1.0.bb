@@ -1,0 +1,56 @@
+DESCRIPTION = "MedTech Vitals Publisher - MQTT vital signs publisher"
+SUMMARY = "Publishes patient vital signs over MQTT"
+HOMEPAGE = "https://github.com/chaithubk/medtech-vitals-publisher"
+LICENSE = "CLOSED"
+PV = "1.0"
+
+inherit systemd
+
+SRCREV = "${AUTOREV}"
+SRC_URI = " \
+    git://github.com/chaithubk/medtech-vitals-publisher.git;protocol=https;branch=main \
+    file://vitals-publisher.service \
+    file://vitals-publisher.env \
+"
+
+S = "${WORKDIR}/git"
+
+RDEPENDS:${PN} = " \
+    python3 \
+    python3-core \
+    python3-json \
+    python3-logging \
+    python3-threading \
+    python3-paho-mqtt \
+    medtech-system \
+"
+
+SYSTEMD_SERVICE:${PN} = "medtech-vitals-publisher.service"
+SYSTEMD_AUTO_ENABLE:${PN} = "enable"
+
+do_install() {
+    # Install application
+    install -d ${D}/opt/medtech/vitals-publisher
+    cp -r ${S}/. ${D}/opt/medtech/vitals-publisher/
+
+    # Make main script executable
+    find ${D}/opt/medtech/vitals-publisher -name "*.py" -exec chmod 0755 {} \;
+
+    # Install environment configuration
+    install -d ${D}${sysconfdir}/medtech
+    install -m 0644 ${WORKDIR}/vitals-publisher.env ${D}${sysconfdir}/medtech/vitals-publisher.env
+
+    # Install systemd service
+    install -d ${D}${systemd_system_unitdir}
+    install -m 0644 ${WORKDIR}/vitals-publisher.service ${D}${systemd_system_unitdir}/medtech-vitals-publisher.service
+
+    # Create log directory
+    install -d ${D}/var/log/medtech
+}
+
+FILES:${PN} = " \
+    /opt/medtech/vitals-publisher \
+    ${sysconfdir}/medtech/vitals-publisher.env \
+    ${systemd_system_unitdir}/medtech-vitals-publisher.service \
+    /var/log/medtech \
+"

@@ -9,7 +9,7 @@ BUILD_DIR="$YOCTO_ROOT/build"
 
 echo "=== MedTech Device OS - QEMU Runner ==="
 
-IMAGE="$BUILD_DIR/tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.ext4"
+IMAGE="$BUILD_DIR/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4"
 
 if [ ! -f "$IMAGE" ]; then
     echo "❌ Image not found: $IMAGE"
@@ -21,5 +21,5 @@ cd "$YOCTO_ROOT"
 source poky/oe-init-build-env build > /dev/null 2>&1
 
 echo "🚀 Booting in QEMU..."
-runqemu qemuarm64 core-image-minimal nographic
+runqemu qemuarm64 core-image-medtech nographic
 
