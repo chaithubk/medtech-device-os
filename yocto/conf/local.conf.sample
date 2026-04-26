@@ -33,8 +33,9 @@ DISTRO_FEATURES:append = " ipv4 ipv6"
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
 
-# SBOM generation (requires Poky kirkstone built-in sbom class)
-# Set INHERIT += "create-spdx" if using meta-security or an SPDX-based approach
+# SBOM generation — provided by meta-medtech/classes/sbom.bbclass.
+# Generates a CycloneDX JSON fragment per recipe under ${DEPLOY_DIR}/sbom/.
+# The image-level assembly is performed by medtech-image.bbclass.
 INHERIT += "sbom"
 SBOM_FORMAT = "json"
 
