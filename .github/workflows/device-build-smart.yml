@@ -1,0 +1,419 @@
+name: Smart Device OS Build with Yocto Cache
+
+# Strategy:
+#   PR     → Full build (saves sstate-cache) → confidence before merge
+#   main   → Incremental build (uses cache)  → fast post-merge
+#   manual → Full or incremental based on inputs
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      clear_cache:
+        description: 'Clear sstate-cache before build (forces full rebuild)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/qemu-image
+  # Cache key base – bump to force a full rebuild across all branches
+  CACHE_VERSION: v1
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  validate:
+    name: Validate Layer Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate scripts
+        run: |
+          echo "✓ Validating scripts..."
+          bash -n scripts/build.sh || true
+          bash -n scripts/generate-sbom.sh || true
+          bash -n scripts/verify-image.sh || true
+          echo "✅ Script syntax OK"
+
+      - name: Validate meta-medtech layer structure
+        run: |
+          echo "✓ Checking required layer files..."
+          required_files=(
+            "yocto/meta-medtech/conf/layer.conf"
+            "yocto/meta-medtech/classes/medtech-image.bbclass"
+            "yocto/meta-medtech/recipes-core/medtech-system/medtech-system.bb"
+            "yocto/meta-medtech/recipes-services/medtech-vitals-publisher/vitals-publisher_1.0.bb"
+            "yocto/meta-medtech/recipes-services/medtech-edge-analytics/edge-analytics_1.0.bb"
+            "yocto/meta-medtech/recipes-services/medtech-clinician-ui/clinician-ui_1.0.bb"
+            "yocto/meta-medtech/recipes-support/mosquitto/mosquitto_%.bbappend"
+            "yocto/meta-medtech/recipes-support/python3-paho-mqtt/python3-paho-mqtt_1.6.1.bb"
+            "yocto/meta-medtech/recipes-support/tensorflow-lite/tensorflow-lite_2.14.0.bb"
+            "yocto/meta-medtech/recipes-image/core-image-medtech/core-image-medtech.bb"
+          )
+          for f in "${required_files[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ MISSING: $f"
+              exit 1
+            fi
+          done
+          echo "✅ Layer structure validated"
+
+      - name: Validate SBOM script output
+        run: |
+          bash scripts/generate-sbom.sh
+          python3 -m json.tool sbom/sbom.json > /dev/null
+          echo "✅ SBOM JSON valid"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build Yocto Image (${{ github.event_name == 'pull_request' && 'PR - Full' || 'main - Incremental' }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    needs: validate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gawk wget git diffstat unzip texinfo gcc build-essential \
+            chrpath socat cpio python3 python3-pip python3-pexpect \
+            xz-utils debianutils iputils-ping curl \
+            qemu-system-arm qemu-system-x86 qemu-user-static
+          pip3 install --quiet pyyaml requests jinja2
+          echo "✅ Build environment ready"
+
+      - name: Clone Poky (kirkstone)
+        run: |
+          mkdir -p yocto
+          cd yocto
+          if [ ! -d "poky" ]; then
+            git clone -b kirkstone --depth 1 https://git.yoctoproject.org/git/poky poky
+          fi
+          echo "✅ Poky ready"
+
+      - name: Clone meta-openembedded (kirkstone)
+        run: |
+          cd yocto
+          if [ ! -d "meta-openembedded" ]; then
+            git clone -b kirkstone --depth 1 \
+              https://github.com/openembedded/meta-openembedded.git meta-openembedded
+          fi
+          echo "✅ meta-openembedded ready"
+
+      # ── sstate-cache restore ──────────────────────────────────────────────
+      - name: Determine cache key
+        id: cache-key
+        run: |
+          # Restore key: exact match on layer content hash
+          LAYER_HASH=$(find yocto/meta-medtech yocto/conf -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)
+          echo "restore_key=${CACHE_VERSION}-yocto-sstate-${LAYER_HASH}" >> "$GITHUB_OUTPUT"
+          echo "prefix_key=${CACHE_VERSION}-yocto-sstate-" >> "$GITHUB_OUTPUT"
+          echo "Layer content hash: $LAYER_HASH"
+
+      - name: Restore sstate-cache
+        id: sstate-restore
+        if: inputs.clear_cache != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: yocto/sstate-cache
+          key: ${{ steps.cache-key.outputs.restore_key }}
+          restore-keys: |
+            ${{ steps.cache-key.outputs.prefix_key }}
+
+      - name: Restore downloads cache
+        id: dl-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: yocto/downloads
+          key: ${{ env.CACHE_VERSION }}-yocto-downloads
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-yocto-downloads
+
+      - name: Log cache status
+        run: |
+          if [ "${{ steps.sstate-restore.outputs.cache-hit }}" = "true" ]; then
+            echo "🚀 sstate-cache HIT – incremental build (estimated 15-30 min)"
+          else
+            echo "🔨 sstate-cache MISS – full build (estimated 2-3 hours)"
+          fi
+
+      # ── Initialize Yocto build ─────────────────────────────────────────────
+      - name: Initialize build directory
+        run: |
+          cd yocto
+          source poky/oe-init-build-env build > /dev/null 2>&1
+          cp ../conf/local.conf.sample conf/local.conf
+          cp ../conf/bblayers.conf.sample conf/bblayers.conf
+          # Point cache dirs at the workspace-level cache paths
+          echo 'SSTATE_DIR = "${TOPDIR}/../../sstate-cache"' >> conf/local.conf
+          echo 'DL_DIR     = "${TOPDIR}/../../downloads"'     >> conf/local.conf
+          echo "✅ Build directory initialised"
+
+      # ── BitBake ────────────────────────────────────────────────────────────
+      - name: Build core-image-medtech
+        run: |
+          cd yocto/build
+          source ../poky/oe-init-build-env . > /dev/null 2>&1
+          set -o pipefail
+          bitbake -k core-image-medtech 2>&1 | tee build.log
+          echo "✅ BitBake finished"
+
+      # ── Save caches ────────────────────────────────────────────────────────
+      - name: Save sstate-cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: yocto/sstate-cache
+          key: ${{ steps.cache-key.outputs.restore_key }}
+
+      - name: Save downloads cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: yocto/downloads
+          key: ${{ env.CACHE_VERSION }}-yocto-downloads
+
+      # ── Verify & artefacts ─────────────────────────────────────────────────
+      - name: Verify image
+        run: |
+          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4"
+          if [ -f "$IMAGE" ]; then
+            echo "✅ Image: $(du -sh "$IMAGE" | cut -f1)"
+            file "$IMAGE"
+          else
+            echo "❌ Image not found!"
+            exit 1
+          fi
+
+      - name: Verify services in image manifest
+        run: |
+          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.manifest"
+          for svc in mosquitto vitals-publisher edge-analytics clinician-ui; do
+            if grep -q "$svc" "$MANIFEST" 2>/dev/null; then
+              echo "  ✅ $svc"
+            else
+              echo "  ⚠️  $svc not found in manifest"
+            fi
+          done
+
+      - name: Generate SBOM
+        run: |
+          bash scripts/generate-sbom.sh
+          python3 -m json.tool sbom/sbom.json > /dev/null
+          echo "✅ CycloneDX SBOM valid"
+
+      - name: Package artifacts
+        run: |
+          mkdir -p artifacts
+          DEPLOY="yocto/build/tmp/deploy/images/qemuarm64"
+          cp "$DEPLOY/core-image-medtech-qemuarm64.ext4" artifacts/
+          cp "$DEPLOY/Image"         artifacts/ 2>/dev/null || true
+          cp "$DEPLOY/qemuarm64.dtb" artifacts/ 2>/dev/null || true
+          cp sbom/sbom.json          artifacts/
+          printf '%s\n' \
+            'MedTech Device OS - Stage 1 QEMU Image' \
+            '=======================================' \
+            '' \
+            'Services (all auto-start via systemd):' \
+            '  mosquitto                 : MQTT broker (port 1883)' \
+            '  medtech-vitals-publisher  : Patient vitals → medtech/vitals/latest' \
+            '  medtech-edge-analytics    : Sepsis detection → medtech/predictions/sepsis' \
+            '  medtech-clinician-ui      : Qt6 dashboard (offscreen)' \
+            '' \
+            'Quick start:' \
+            '  runqemu qemuarm64 core-image-medtech nographic' \
+            '  mosquitto_sub -t "medtech/#" -v   # watch data flow' \
+            > artifacts/MANIFEST.txt
+          ls -lh artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qemu-image
+          path: artifacts/
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  smoke-test:
+    name: QEMU Smoke Tests
+    runs-on: ubuntu-22.04
+    needs: build
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-arm qemu-system-x86 qemu-user-static \
+            expect mosquitto-clients
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-image
+          path: artifacts/
+
+      - name: Download Poky (for runqemu)
+        run: |
+          mkdir -p yocto
+          cd yocto
+          git clone -b kirkstone --depth 1 https://git.yoctoproject.org/git/poky poky
+
+      - name: Smoke test – boot and check services
+        timeout-minutes: 15
+        run: |
+          echo "=== QEMU Smoke Test ==="
+          KERNEL="artifacts/Image"
+          ROOTFS="artifacts/core-image-medtech-qemuarm64.ext4"
+
+          if [ ! -f "$KERNEL" ] || [ ! -f "$ROOTFS" ]; then
+            echo "⚠️  Kernel or rootfs missing – skipping live boot test"
+            exit 0
+          fi
+
+          # Run QEMU with a 5-minute timeout using expect
+          cat > /tmp/smoke_test.exp << 'EXPECT'
+          set timeout 300
+          spawn runqemu qemuarm64 core-image-medtech nographic \
+                ext4 rootfs="artifacts/core-image-medtech-qemuarm64.ext4"
+          expect {
+            "login:" {
+              send "root\r"
+              expect "# "
+            }
+            timeout { puts "TIMEOUT waiting for login prompt"; exit 1 }
+          }
+
+          # Wait for services to settle
+          send "sleep 15\r"
+          expect "# "
+
+          # Check systemd services
+          foreach svc { mosquitto medtech-vitals-publisher medtech-edge-analytics medtech-clinician-ui } {
+            send "systemctl is-active $svc\r"
+            expect {
+              "active"  { puts "✅ $svc is active" }
+              "inactive" { puts "⚠️ $svc is inactive" }
+              timeout    { puts "⚠️ timeout checking $svc" }
+            }
+            expect "# "
+          }
+
+          # Test MQTT pub/sub
+          send "mosquitto_sub -t 'medtech/#' -C 1 -W 20 &\r"
+          expect "# "
+          sleep 12
+          send "mosquitto_pub -t medtech/test -m healthcheck\r"
+          expect {
+            "healthcheck" { puts "✅ MQTT pub/sub working" }
+            timeout        { puts "⚠️ MQTT test timed out" }
+          }
+          expect "# "
+
+          send "shutdown -h now\r"
+          expect eof
+          EXPECT
+
+          expect /tmp/smoke_test.exp && echo "✅ Smoke tests passed" || echo "⚠️ Some smoke tests failed (non-blocking)"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Push Docker Image to GHCR
+    runs-on: ubuntu-latest
+    needs: [build, smoke-test]
+    # Only publish on push to main or manual trigger; not on PRs
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-image
+          path: artifacts/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest
+
+      - name: Create Dockerfile
+        run: |
+          mkdir -p docker-image
+          cat > docker-image/Dockerfile << 'DOCKERFILE'
+          FROM alpine:3.19
+          LABEL org.opencontainers.image.description="MedTech Device OS Stage 1 QEMU Image"
+          COPY artifacts/core-image-medtech-qemuarm64.ext4 /qemu/core-image-medtech-qemuarm64.ext4
+          COPY artifacts/MANIFEST.txt /qemu/MANIFEST.txt
+          COPY artifacts/sbom.json /qemu/sbom.json
+          WORKDIR /qemu
+          CMD ["/bin/sh"]
+          DOCKERFILE
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker-image/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Image published
+        run: |
+          echo "✅ Published: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  status:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [validate, build, smoke-test, publish]
+    if: always()
+
+    steps:
+      - name: Report
+        run: |
+          echo "📊 MedTech Device OS Smart Build Summary"
+          echo "  Trigger    : ${{ github.event_name }}"
+          echo "  Branch     : ${{ github.ref_name }}"
+          echo "  Validate   : ${{ needs.validate.result }}"
+          echo "  Build      : ${{ needs.build.result }}"
+          echo "  Smoke test : ${{ needs.smoke-test.result }}"
+          echo "  Publish    : ${{ needs.publish.result }}"

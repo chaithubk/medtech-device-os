@@ -1,6 +1,6 @@
 [Unit]
 Description=MedTech Edge Analytics
-Wants=network-online.target
+Wants=network-online.target medtech-vitals-publisher.service
 After=network-online.target medtech-vitals-publisher.service
 
 [Service]

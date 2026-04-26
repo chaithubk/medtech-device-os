@@ -11,12 +11,6 @@ inherit cmake
 SRC_URI = "https://github.com/tensorflow/tensorflow/archive/refs/tags/v${PV}.tar.gz;downloadfilename=tensorflow-${PV}.tar.gz"
 SRC_URI[sha256sum] = "3f85af774ee5e4a6dcc36d19f0bb3b1f32af8b96b00462acd5e2e12be8d1e4db"
 
-# The cross-compile patch is provided for reference but not applied by default;
-# enable it when building on hosts where cpuinfo auto-detection causes issues.
-SRC_URI += " \
-    file://0001-disable-cpuinfo-for-cross-compile.patch;apply=no \
-"
-
 S = "${WORKDIR}/tensorflow-${PV}/tensorflow/lite"
 
 DEPENDS = " \
@@ -47,6 +41,8 @@ do_install() {
     if [ -f ${B}/libtensorflow-lite.so ]; then
         install -m 0755 ${B}/libtensorflow-lite.so ${D}${libdir}/libtensorflow-lite.so.${PV}
         ln -sf libtensorflow-lite.so.${PV} ${D}${libdir}/libtensorflow-lite.so
+    else
+        bbfatal "Expected shared library not found: ${B}/libtensorflow-lite.so. Check EXTRA_OECMAKE flags."
     fi
 
     # Install headers

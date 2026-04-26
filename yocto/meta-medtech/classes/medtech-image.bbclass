@@ -1,7 +1,7 @@
 # medtech-image.bbclass
 # Custom Yocto class for MedTech image post-processing:
 #   - Stamps image version into /etc/medtech-release
-#   - Generates a CycloneDX SBOM fragment from installed packages
+#   - Generates a static CycloneDX SBOM catalog for the image
 #   - Records build metadata for traceability
 
 MEDTECH_IMAGE_VERSION ?= "1.0.0"
@@ -56,26 +56,26 @@ medtech_generate_sbom() {
     {
       "type": "application",
       "name": "medtech-vitals-publisher",
-      "version": "1.0.0",
+      "version": "1.0",
       "description": "MQTT vital signs publisher",
       "scope": "required",
-      "purl": "pkg:github/chaithubk/medtech-vitals-publisher@1.0.0"
+      "purl": "pkg:github/chaithubk/medtech-vitals-publisher@1.0"
     },
     {
       "type": "application",
       "name": "medtech-edge-analytics",
-      "version": "1.0.0",
+      "version": "1.0",
       "description": "Sepsis detection with TensorFlow Lite",
       "scope": "required",
-      "purl": "pkg:github/chaithubk/medtech-edge-analytics@1.0.0"
+      "purl": "pkg:github/chaithubk/medtech-edge-analytics@1.0"
     },
     {
       "type": "application",
       "name": "medtech-clinician-ui",
-      "version": "1.0.0",
+      "version": "1.0",
       "description": "Qt6-based clinical dashboard",
       "scope": "required",
-      "purl": "pkg:github/chaithubk/medtech-clinician-ui@1.0.0"
+      "purl": "pkg:github/chaithubk/medtech-clinician-ui@1.0"
     },
     {
       "type": "library",

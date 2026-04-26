@@ -6,7 +6,7 @@ PV = "1.0"
 
 inherit systemd
 
-SRCREV = "${AUTOREV}"
+SRCREV = "2ff320cc820db7692a2847db9c4ead5ccb7f8cfe"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-edge-analytics.git;protocol=https;branch=main \
     file://edge-analytics.service \
@@ -31,11 +31,21 @@ SYSTEMD_SERVICE:${PN} = "medtech-edge-analytics.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
-    # Install application
+    # Install application, excluding VCS metadata and non-runtime artifacts
     install -d ${D}/opt/medtech/edge-analytics
-    cp -r ${S}/. ${D}/opt/medtech/edge-analytics/
+    (
+        cd ${S}
+        tar --exclude-vcs \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.pytest_cache' \
+            -cf - .
+    ) | (
+        cd ${D}/opt/medtech/edge-analytics
+        tar -xf -
+    )
 
-    # Make scripts executable
+    # Make only the Python entry points executable
     find ${D}/opt/medtech/edge-analytics -name "*.py" -exec chmod 0755 {} \;
 
     # Install TFLite model if present

@@ -6,7 +6,7 @@ PV = "1.0"
 
 inherit cmake systemd
 
-SRCREV = "${AUTOREV}"
+SRCREV = "6e24f83e0bb8c082906b2730e2a2267e091592d0"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-clinician-ui.git;protocol=https;branch=main \
     file://clinician-ui.service \

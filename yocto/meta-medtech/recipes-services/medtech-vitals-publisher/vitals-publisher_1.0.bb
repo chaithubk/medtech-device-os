@@ -6,7 +6,7 @@ PV = "1.0"
 
 inherit systemd
 
-SRCREV = "${AUTOREV}"
+SRCREV = "e03e4be5414cf9c260dd9067fc6971dcb6f7cbee"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-vitals-publisher.git;protocol=https;branch=main \
     file://vitals-publisher.service \
@@ -29,11 +29,21 @@ SYSTEMD_SERVICE:${PN} = "medtech-vitals-publisher.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
-    # Install application
+    # Install application, excluding VCS metadata and non-runtime artifacts
     install -d ${D}/opt/medtech/vitals-publisher
-    cp -r ${S}/. ${D}/opt/medtech/vitals-publisher/
+    (
+        cd ${S}
+        tar --exclude-vcs \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.pytest_cache' \
+            -cf - .
+    ) | (
+        cd ${D}/opt/medtech/vitals-publisher
+        tar -xf -
+    )
 
-    # Make main script executable
+    # Make only the main entry point executable
     find ${D}/opt/medtech/vitals-publisher -name "*.py" -exec chmod 0755 {} \;
 
     # Install environment configuration

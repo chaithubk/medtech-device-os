@@ -2,7 +2,7 @@ DESCRIPTION = "MedTech Medical IoT Image - Stage 1"
 SUMMARY = "Complete MedTech image with MQTT broker, vitals publisher, edge analytics and clinician UI"
 LICENSE = "CLOSED"
 
-inherit core-image
+inherit core-image medtech-image
 
 # Base packages
 IMAGE_INSTALL:append = " \
@@ -60,11 +60,6 @@ IMAGE_INSTALL:append = " \
 # SSH server and debug tweaks (debug-tweaks allows passwordless root login -
 # REMOVE for production hardening before hardware deployment)
 IMAGE_FEATURES += "ssh-server-openssh debug-tweaks"
-
-# Systemd as init manager
-DISTRO_FEATURES:append = " systemd"
-VIRTUAL-RUNTIME_init_manager = "systemd"
-VIRTUAL-RUNTIME_initscripts = ""
 
 # Image size settings
 IMAGE_ROOTFS_SIZE = "524288"
