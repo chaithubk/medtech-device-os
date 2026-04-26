@@ -5,6 +5,7 @@ After=network-online.target medtech-edge-analytics.service
 
 [Service]
 Type=simple
+Environment="QT_QPA_PLATFORM=offscreen"
 ExecStart=/opt/medtech/clinician-ui/clinician-ui
 Restart=on-failure
 RestartSec=5s

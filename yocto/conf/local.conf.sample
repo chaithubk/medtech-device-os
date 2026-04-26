@@ -22,9 +22,9 @@ DISTRO_FEATURES:append = " systemd"
 VIRTUAL-RUNTIME_init_manager = "systemd"
 VIRTUAL-RUNTIME_initscripts = ""
 
-# Qt6 and display support
-DISTRO_FEATURES:append = " opengl"
-DISTRO_FEATURES:remove = "wayland x11"
+# Qt6 and display support — use OpenGL (EGL/GLES) headless; no Vulkan/Wayland/X11
+DISTRO_FEATURES:append = " opengl pam"
+DISTRO_FEATURES:remove = "wayland x11 vulkan"
 
 # IPv4/IPv6 networking
 DISTRO_FEATURES:append = " ipv4 ipv6"

@@ -40,10 +40,12 @@ IMAGE_INSTALL:append = " \
     tensorflow-lite \
 "
 
-# Qt6 support for clinician-ui
+# Qt6 support for clinician-ui (OpenGL/offscreen backend — no Vulkan/Wayland)
 IMAGE_INSTALL:append = " \
     qtbase \
     qtdeclarative \
+    qtmqtt \
+    mesa \
     fontconfig \
     freetype \
 "
