@@ -147,9 +147,9 @@ yocto/meta-medtech/
 ├── classes/medtech-image.bbclass
 ├── recipes-core/medtech-system/medtech-system.bb
 ├── recipes-services/
-│   ├── medtech-vitals-publisher/vitals-publisher_1.0.bb
-│   ├── medtech-edge-analytics/edge-analytics_1.0.bb
-│   └── medtech-clinician-ui/clinician-ui_1.0.bb
+│   ├── medtech-vitals-publisher/medtech-vitals-publisher_1.0.bb
+│   ├── medtech-edge-analytics/medtech-edge-analytics_1.0.bb
+│   └── medtech-clinician-ui/medtech-clinician-ui_1.0.bb
 ├── recipes-support/
 │   ├── mosquitto/mosquitto_%.bbappend
 │   ├── python3-paho-mqtt/python3-paho-mqtt_1.6.1.bb
