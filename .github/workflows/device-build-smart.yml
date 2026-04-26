@@ -138,14 +138,14 @@ jobs:
           fi
           echo "✅ meta-openembedded ready"
 
-      - name: Clone meta-qt6 (kirkstone)
+      - name: Clone meta-qt6 (Qt 6.4 for kirkstone)
         run: |
           cd yocto
           if [ ! -d "meta-qt6" ]; then
             # Primary: official Qt project server (canonical, most stable)
-            git clone -b kirkstone --depth 1 \
+            git clone -b 6.4 --depth 1 \
               https://code.qt.io/yocto/meta-qt6.git meta-qt6 \
-            || git clone -b kirkstone --depth 1 \
+            || git clone -b 6.4 --depth 1 \
               https://github.com/meta-qt6/meta-qt6.git meta-qt6
           fi
           echo "✅ meta-qt6 ready"

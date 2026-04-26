@@ -81,12 +81,12 @@ clone_with_retry \
 if ! clone_with_retry \
         "meta-qt6" \
         "https://code.qt.io/yocto/meta-qt6.git" \
-        "kirkstone"; then
+        "6.4"; then
     echo "   Primary URL failed — trying GitHub mirror..."
     clone_with_retry \
         "meta-qt6" \
         "https://github.com/meta-qt6/meta-qt6.git" \
-        "kirkstone" || {
+        "6.4" || {
         echo "   FAIL: meta-qt6 could not be cloned from either source"
         echo "         clinician-ui will not build without meta-qt6"
         exit 1
