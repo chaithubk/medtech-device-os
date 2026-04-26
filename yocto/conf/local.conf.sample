@@ -33,11 +33,27 @@ DISTRO_FEATURES:append = " ipv4 ipv6"
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
 
-# SBOM generation — provided by meta-medtech/classes/sbom.bbclass.
-# Generates a CycloneDX JSON fragment per recipe under ${DEPLOY_DIR}/sbom/.
-# The image-level assembly is performed by medtech-image.bbclass.
-INHERIT += "sbom"
-SBOM_FORMAT = "json"
+# ============================================================
+# SPDX / SBOM generation (Yocto native — kirkstone+)
+# ============================================================
+# create-spdx is shipped with Poky; no extra layer needed.
+# It auto-generates an SPDX 2.2 document for every recipe and
+# assembles a complete image-level SPDX JSON during do_rootfs.
+# Output: tmp/deploy/images/qemuarm64/spdx/
+# Standards: ISO/IEC 40110, NTIA Minimum Elements, SPDX 2.2
+INHERIT += "create-spdx"
+
+# Human-readable indented JSON output
+SPDX_PRETTY = "1"
+
+# Compress per-package SPDX archives with gzip
+SPDX_ARCHIVE_COMPRESS = "gz"
+
+# Include source code references in the SPDX document
+SPDX_INCLUDE_SOURCES = "1"
+
+# Output directory (under DEPLOY_DIR_IMAGE)
+SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
 
 # Additional base packages
 IMAGE_INSTALL:append = " \

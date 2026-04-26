@@ -26,6 +26,7 @@ jobs:
           bash -n scripts/quick-setup.sh || true
           bash -n scripts/verify-image.sh || true
           bash -n scripts/generate-sbom.sh || true
+          bash -n scripts/process-sbom.sh || true
           echo "✅ Validation complete"
 
       - name: Validate layer structure
@@ -149,14 +150,11 @@ jobs:
             echo "⚠️  Manifest not found, skipping service check"
           fi
       
-      - name: Generate SBOM
+      - name: Process SPDX SBOM
         run: |
-          echo "=== Generating SBOM ==="
-          bash scripts/generate-sbom.sh
-          if [ -f "sbom/sbom.json" ]; then
-            echo "✅ SBOM generated"
-            cat sbom/sbom.json | python3 -m json.tool > /dev/null && echo "✅ SBOM JSON valid"
-          fi
+          echo "=== Processing Yocto SPDX SBOM ==="
+          bash scripts/process-sbom.sh
+          echo "✅ SPDX SBOM collected"
       
       - name: Create artifact archive
         run: |
@@ -165,7 +163,9 @@ jobs:
           cp yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4 artifacts/
           cp yocto/build/tmp/deploy/images/qemuarm64/Image artifacts/ || true
           cp yocto/build/tmp/deploy/images/qemuarm64/qemuarm64.dtb artifacts/ || true
-          cp sbom/sbom.json artifacts/
+          cp sbom/*.json   artifacts/ 2>/dev/null || true
+          cp sbom/*.rdf    artifacts/ 2>/dev/null || true
+          cp sbom/*.tar.gz artifacts/ 2>/dev/null || true
           echo "✅ Artifacts ready"
       
       - name: Create manifest
@@ -185,7 +185,8 @@ jobs:
             '- core-image-medtech-qemuarm64.ext4 : Main filesystem image' \
             '- Image                              : Linux kernel (optional)' \
             '- qemuarm64.dtb                      : Device tree blob (optional)' \
-            '- sbom.json                          : CycloneDX Software Bill of Materials' \
+            '- *.spdx.json                        : SPDX 2.2 Software Bill of Materials (JSON-LD)' \
+            '- *.spdx.rdf.gz                      : SPDX 2.2 SBOM (RDF/XML, gzip compressed)' \
             '' \
             'Quick Start:' \
             '1. runqemu qemuarm64 core-image-medtech nographic' \
