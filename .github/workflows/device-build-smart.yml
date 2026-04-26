@@ -10,6 +10,9 @@ on:
     branches: [ main ]
   push:
     branches: [ main ]
+  schedule:
+    # Weekly full build every Sunday at 02:00 UTC — catches upstream layer drift
+    - cron: '0 2 * * 0'
   workflow_dispatch:
     inputs:
       clear_cache:
@@ -26,6 +29,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}/qemu-image
   # Cache key base – bump to force a full rebuild across all branches
   CACHE_VERSION: v1
+  # Prevent git credential prompts in non-interactive CI runners
+  GIT_TERMINAL_PROMPT: "0"
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -40,11 +45,15 @@ jobs:
 
       - name: Validate scripts
         run: |
-          echo "✓ Validating scripts..."
-          bash -n scripts/build.sh || true
-          bash -n scripts/generate-sbom.sh || true
-          bash -n scripts/process-sbom.sh || true
-          bash -n scripts/verify-image.sh || true
+          echo "✓ Validating CI scripts..."
+          # These scripts are used directly by CI steps:
+          bash -n scripts/build.sh
+          bash -n scripts/process-sbom.sh
+          bash -n scripts/verify-image.sh
+          # Local dev helpers (not called by CI, validated for correctness):
+          bash -n scripts/build-robust.sh
+          bash -n scripts/clone-with-retry.sh
+          bash -n scripts/preflight-check.sh
           echo "✅ Script syntax OK"
 
       - name: Validate meta-medtech layer structure
@@ -102,6 +111,15 @@ jobs:
           pip3 install --quiet pyyaml requests jinja2
           echo "✅ Build environment ready"
 
+      - name: Configure git for CI
+        run: |
+          # Kill stalled TCP connections: < 1 KB/s for 30 s → abort
+          # (prevents jobs from hanging until the 5-hour timeout fires)
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
+          git config --global http.timeout 120
+          echo "✅ Git configured for CI"
+
       - name: Clone Poky (kirkstone)
         run: |
           mkdir -p yocto
@@ -124,7 +142,10 @@ jobs:
         run: |
           cd yocto
           if [ ! -d "meta-qt6" ]; then
+            # Primary: official Qt project server (canonical, most stable)
             git clone -b kirkstone --depth 1 \
+              https://code.qt.io/yocto/meta-qt6.git meta-qt6 \
+            || git clone -b kirkstone --depth 1 \
               https://github.com/meta-qt6/meta-qt6.git meta-qt6
           fi
           echo "✅ meta-qt6 ready"
@@ -402,7 +423,8 @@ jobs:
           LABEL org.opencontainers.image.description="MedTech Device OS Stage 1 QEMU Image"
           COPY artifacts/core-image-medtech-qemuarm64.ext4 /qemu/core-image-medtech-qemuarm64.ext4
           COPY artifacts/MANIFEST.txt /qemu/MANIFEST.txt
-          COPY artifacts/sbom.json /qemu/sbom.json
+          # SPDX 2.2 bill of materials (JSON-LD) — copy all generated files
+          COPY artifacts/*.spdx.json /qemu/sbom/
           WORKDIR /qemu
           CMD ["/bin/sh"]
           DOCKERFILE

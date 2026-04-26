@@ -34,6 +34,21 @@ DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
 
 # ============================================================
+# Build resilience & diagnostics
+# ============================================================
+
+# Stop all tasks when < 100 MB remain on TMPDIR filesystem
+BB_DISKMON_DIRS = "STOPTASKS,${TMPDIR},100M,100K"
+
+# Hash equivalency server — dramatically speeds up incremental CI builds
+# by sharing task signatures across machines
+BB_HASHSERVE = "auto"
+
+# Print failed task output in the terminal (last 20 lines per task)
+BBINCLUDELOGS = "yes"
+BBINCLUDELOGS_LINES = "20"
+
+# ============================================================
 # SPDX / SBOM generation (Yocto native — kirkstone+)
 # ============================================================
 # create-spdx is shipped with Poky; no extra layer needed.
