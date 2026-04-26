@@ -14,8 +14,7 @@ IMAGE_INSTALL:append = " \
     python3-threading \
     python3-numpy \
     openssh \
-    openssh-client \
-    openssh-server \
+    openssh-ssh \
     curl \
     wget \
     nano \

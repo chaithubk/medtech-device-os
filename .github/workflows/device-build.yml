@@ -97,6 +97,17 @@ jobs:
           else
             echo "✅ meta-openembedded already exists"
           fi
+
+      - name: Clone meta-qt6
+        run: |
+          echo "=== Cloning meta-qt6 kirkstone ==="
+          cd yocto
+          if [ ! -d "meta-qt6" ]; then
+            git clone -b kirkstone --depth 1 https://github.com/meta-qt6/meta-qt6.git meta-qt6
+            echo "✅ meta-qt6 cloned"
+          else
+            echo "✅ meta-qt6 already exists"
+          fi
       
       - name: Initialize build
         run: |

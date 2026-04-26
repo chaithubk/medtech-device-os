@@ -120,6 +120,15 @@ jobs:
           fi
           echo "✅ meta-openembedded ready"
 
+      - name: Clone meta-qt6 (kirkstone)
+        run: |
+          cd yocto
+          if [ ! -d "meta-qt6" ]; then
+            git clone -b kirkstone --depth 1 \
+              https://github.com/meta-qt6/meta-qt6.git meta-qt6
+          fi
+          echo "✅ meta-qt6 ready"
+
       # ── sstate-cache restore ──────────────────────────────────────────────
       - name: Determine cache key
         id: cache-key
