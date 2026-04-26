@@ -8,9 +8,11 @@ PV = "2.14.0"
 
 inherit cmake
 
-SRC_URI = "https://github.com/tensorflow/tensorflow/archive/refs/tags/v${PV}.tar.gz"
+SRC_URI = "https://github.com/tensorflow/tensorflow/archive/refs/tags/v${PV}.tar.gz;downloadfilename=tensorflow-${PV}.tar.gz"
 SRC_URI[sha256sum] = "3f85af774ee5e4a6dcc36d19f0bb3b1f32af8b96b00462acd5e2e12be8d1e4db"
 
+# The cross-compile patch is provided for reference but not applied by default;
+# enable it when building on hosts where cpuinfo auto-detection causes issues.
 SRC_URI += " \
     file://0001-disable-cpuinfo-for-cross-compile.patch;apply=no \
 "
@@ -59,4 +61,7 @@ do_install() {
 FILES:${PN} = "${libdir}/libtensorflow-lite.so*"
 FILES:${PN}-dev = "${includedir}/tensorflow"
 
+# INSANE_SKIP: dev-so is needed because the .so symlink must ship in the
+# runtime package so that Python/C++ code can dlopen libtensorflow-lite.so
+# without requiring the -dev package at runtime.
 INSANE_SKIP:${PN} = "dev-so"

@@ -87,7 +87,7 @@ medtech_generate_sbom() {
     {
       "type": "library",
       "name": "tensorflow-lite",
-      "version": "${MEDTECH_IMAGE_VERSION}",
+      "version": "2.14.0",
       "description": "TensorFlow Lite runtime",
       "scope": "required"
     },

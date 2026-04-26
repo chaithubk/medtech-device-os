@@ -57,7 +57,8 @@ IMAGE_INSTALL:append = " \
     clinician-ui \
 "
 
-# SSH server and debug tweaks (remove for production hardening)
+# SSH server and debug tweaks (debug-tweaks allows passwordless root login -
+# REMOVE for production hardening before hardware deployment)
 IMAGE_FEATURES += "ssh-server-openssh debug-tweaks"
 
 # Systemd as init manager

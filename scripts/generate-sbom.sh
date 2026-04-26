@@ -5,7 +5,6 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SBOM_DIR="$PROJECT_ROOT/sbom"
-TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 mkdir -p "$SBOM_DIR"
 
@@ -19,6 +18,7 @@ TFLITE_VERSION="2.14.0"
 PAHO_VERSION="1.6.1"
 
 RECIPES_DIR="$PROJECT_ROOT/yocto/meta-medtech"
+TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [ -d "$RECIPES_DIR" ]; then
     vp=$(find "$RECIPES_DIR" -name "vitals-publisher_*.bb" 2>/dev/null | head -1)
     ea=$(find "$RECIPES_DIR" -name "edge-analytics_*.bb" 2>/dev/null | head -1)

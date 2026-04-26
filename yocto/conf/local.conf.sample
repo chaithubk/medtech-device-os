@@ -33,7 +33,8 @@ DISTRO_FEATURES:append = " ipv4 ipv6"
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
 
-# SBOM generation
+# SBOM generation (requires Poky kirkstone built-in sbom class)
+# Set INHERIT += "create-spdx" if using meta-security or an SPDX-based approach
 INHERIT += "sbom"
 SBOM_FORMAT = "json"
 
