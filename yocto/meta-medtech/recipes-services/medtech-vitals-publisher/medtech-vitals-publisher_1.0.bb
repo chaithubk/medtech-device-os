@@ -17,10 +17,6 @@ S = "${WORKDIR}/git"
 
 RDEPENDS:${PN} = " \
     python3 \
-    python3-core \
-    python3-json \
-    python3-logging \
-    python3-threading \
     python3-paho-mqtt \
     medtech-system \
 "
@@ -54,13 +50,10 @@ do_install() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/vitals-publisher.service ${D}${systemd_system_unitdir}/medtech-vitals-publisher.service
 
-    # Create log directory
-    install -d ${D}/var/log/medtech
 }
 
 FILES:${PN} = " \
     /opt/medtech/vitals-publisher \
     ${sysconfdir}/medtech/vitals-publisher.env \
     ${systemd_system_unitdir}/medtech-vitals-publisher.service \
-    /var/log/medtech \
 "

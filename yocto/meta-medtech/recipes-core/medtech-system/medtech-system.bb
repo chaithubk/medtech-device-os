@@ -8,10 +8,6 @@ inherit systemd
 # Runtime dependencies shared by all medtech services
 RDEPENDS:${PN} = " \
     python3 \
-    python3-core \
-    python3-json \
-    python3-logging \
-    python3-threading \
     mosquitto \
 "
 
@@ -21,12 +17,14 @@ do_install() {
     # Create medtech directory layout
     install -d ${D}/opt/medtech
     install -d ${D}/opt/medtech/models
-    install -d ${D}/var/log/medtech
+    # On Yocto, /var/log is commonly a symlink to /var/volatile/log.
+    # Package the real path to avoid do_package symlink parent errors.
+    install -d ${D}${localstatedir}/volatile/log/medtech
     install -d ${D}/etc/medtech
 }
 
 FILES:${PN} = " \
     /opt/medtech \
-    /var/log/medtech \
+    ${localstatedir}/volatile/log/medtech \
     /etc/medtech \
 "

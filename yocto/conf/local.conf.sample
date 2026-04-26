@@ -3,19 +3,20 @@
 MACHINE = "qemuarm64"
 DISTRO = "poky"
 
-# Image type
-IMAGE_FSTYPES = "ext4 tar.bz2"
+# Image type (keep only deployable artifact used by CI to reduce disk/time)
+IMAGE_FSTYPES = "ext4"
 
-# Build parallel settings
-BB_NUMBER_THREADS = "4"
-PARALLEL_MAKE = "-j 4"
+# Build parallel settings (conservative to reduce disk churn)
+BB_NUMBER_THREADS = "2"
+PARALLEL_MAKE = "-j 2"
 
 # Package formats
 PACKAGE_CLASSES = "package_ipk"
 
 # Image features
 IMAGE_FEATURES += "ssh-server-openssh"
-EXTRA_IMAGE_FEATURES += "debug-tweaks"
+EXTRA_IMAGE_FEATURES = ""
+IMAGE_FEATURES:remove = "debug-tweaks dbg-pkgs dev-pkgs tools-debug tools-profile tools-sdk"
 
 # Systemd as init manager
 DISTRO_FEATURES:append = " systemd"
@@ -32,21 +33,62 @@ DISTRO_FEATURES:append = " ipv4 ipv6"
 # Downloads and sstate cache
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
+SSTATE_MIRRORS = ""
+
+# ============================================================
+# Build optimization — GitHub-hosted runner disk constraints
+# ============================================================
+
+# Keep SDK machine valid for parser-generated nativesdk variants.
+# We do not run populate_sdk in CI, so this does not force SDK artifact generation.
+SDKMACHINE = "x86_64"
+
+# Strip debug symbols from binaries (reduces image size significantly)
+INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
+INHIBIT_PACKAGE_STRIP = "0"
+SKIP_PACKAGE_STRIP = "0"
+
+# Do not generate static development output
+# Yocto expects DISABLE_STATIC to be a configure-fragment string, not a boolean.
+# Using "1" can leak into configure args and create malformed options like
+# --without-sendmail1 / --without-libsigsegv-prefix1 in native recipes.
+DISABLE_STATIC = " --disable-static"
+
+# Do NOT install development packages (-dev, -staticdev) by default
+# This prevents BitBake from building unnecessary development dependencies
+DISTRO_FEATURES:remove = "api-documentation doc"
+
+# Disable locale payload bloat
+IMAGE_LINGUAS = ""
+ENABLE_BINARY_LOCALE_GENERATION = "0"
+
+# Remove task workdirs aggressively to release TMPDIR pressure
+INHERIT += "rm_work"
+RM_WORK_EXCLUDE += "core-image-medtech"
+
+# Keep git fetches shallow where supported
+BB_GIT_SHALLOW = "1"
+BB_GIT_SHALLOW_DEPTH = "1"
+
+# Enforce strict checksums — fail immediately on any tarball checksum drift
+# instead of silently re-downloading. This catches GitHub tarball regeneration
+# before it wastes build time.
+BB_STRICT_CHECKSUM = "1"
 
 # ============================================================
 # Build resilience & diagnostics
 # ============================================================
 
-# Stop all tasks when < 100 MB remain on TMPDIR filesystem
-BB_DISKMON_DIRS = "STOPTASKS,${TMPDIR},100M,100K"
+# Abort when disk is critically low so workflow fails early and clearly
+BB_DISKMON_DIRS = "ABORT,${TMPDIR},100M,100K"
 
 # Hash equivalency server — dramatically speeds up incremental CI builds
 # by sharing task signatures across machines
 BB_HASHSERVE = "auto"
 
-# Print failed task output in the terminal (last 20 lines per task)
+# Print failed task output in the terminal with enough context for CI triage
 BBINCLUDELOGS = "yes"
-BBINCLUDELOGS_LINES = "20"
+BBINCLUDELOGS_LINES = "200"
 
 # ============================================================
 # SPDX / SBOM generation (Yocto native — kirkstone+)
@@ -64,20 +106,9 @@ SPDX_PRETTY = "1"
 # Compress per-package SPDX archives with gzip
 SPDX_ARCHIVE_COMPRESS = "gz"
 
-# Include source code references in the SPDX document
-SPDX_INCLUDE_SOURCES = "1"
+# Do NOT include source code references in SPDX (saves disk space during build)
+SPDX_INCLUDE_SOURCES = "0"
 
 # Output directory (under DEPLOY_DIR_IMAGE)
 SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
-
-# Additional base packages
-IMAGE_INSTALL:append = " \
-    python3 \
-    python3-pip \
-    openssh \
-    curl \
-    wget \
-    nano \
-    htop \
-"
 

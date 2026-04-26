@@ -139,6 +139,19 @@ GitHub Actions (`.github/workflows/device-build.yml`) automatically:
 4. Uploads the `.ext4` image and SBOM as artifacts
 5. Pushes a tagged Docker image to GHCR (`ghcr.io/<owner>/medtech-device-os/qemu-image`)
 
+### Disk Space Optimization
+
+The build is optimized for GitHub Actions runners (limited to ~14 GB disk space):
+
+- **Minimal image packages**: Removed `python3-pip`, `wget`, `nano`, `htop`, `rsyslog`, `mesa` (~500 MB-1 GB saved)
+- **No SDK builds**: `SDKMACHINE = ""` prevents cross-compilation SDK generation (~2-3 GB saved)
+- **Strip debug symbols**: `INHIBIT_PACKAGE_DEBUG_SPLIT = "1"` (~1-2 GB saved)
+- **No API documentation**: `DISTRO_FEATURES:remove = "api-documentation"` (~200-500 MB saved)
+- **No SPDX sources**: `SPDX_INCLUDE_SOURCES = "0"` (~500 MB-1 GB saved)
+- **CI pre-build cleanup**: Removes dotnet, android, ghc, CodeQL (~12-15 GB freed)
+
+See [`DISK_OPTIMIZATION.md`](DISK_OPTIMIZATION.md) for detailed strategy.
+
 ### Layer Structure
 
 ```

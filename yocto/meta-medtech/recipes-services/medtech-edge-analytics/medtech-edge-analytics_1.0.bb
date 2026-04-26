@@ -17,10 +17,6 @@ S = "${WORKDIR}/git"
 
 RDEPENDS:${PN} = " \
     python3 \
-    python3-core \
-    python3-json \
-    python3-logging \
-    python3-threading \
     python3-numpy \
     python3-paho-mqtt \
     tensorflow-lite \
@@ -62,8 +58,6 @@ do_install() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/edge-analytics.service ${D}${systemd_system_unitdir}/medtech-edge-analytics.service
 
-    # Create log directory
-    install -d ${D}/var/log/medtech
 }
 
 FILES:${PN} = " \
@@ -71,5 +65,4 @@ FILES:${PN} = " \
     /opt/medtech/models \
     ${sysconfdir}/medtech/edge-analytics.env \
     ${systemd_system_unitdir}/medtech-edge-analytics.service \
-    /var/log/medtech \
 "
