@@ -53,9 +53,9 @@ IMAGE_INSTALL:append = " \
 # MedTech services (order reflects systemd dependencies)
 IMAGE_INSTALL:append = " \
     medtech-system \
-    vitals-publisher \
-    edge-analytics \
-    clinician-ui \
+    medtech-vitals-publisher \
+    medtech-edge-analytics \
+    medtech-clinician-ui \
 "
 
 # SSH server and debug tweaks (debug-tweaks allows passwordless root login -
