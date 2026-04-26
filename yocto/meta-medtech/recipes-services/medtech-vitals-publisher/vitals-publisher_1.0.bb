@@ -43,7 +43,7 @@ do_install() {
         tar -xf -
     )
 
-    # Make only the main entry point executable
+    # Make all Python files executable (entry points and helpers)
     find ${D}/opt/medtech/vitals-publisher -name "*.py" -exec chmod 0755 {} \;
 
     # Install environment configuration

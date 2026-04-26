@@ -45,7 +45,7 @@ do_install() {
         tar -xf -
     )
 
-    # Make only the Python entry points executable
+    # Make all Python files executable (entry points and helpers)
     find ${D}/opt/medtech/edge-analytics -name "*.py" -exec chmod 0755 {} \;
 
     # Install TFLite model if present
