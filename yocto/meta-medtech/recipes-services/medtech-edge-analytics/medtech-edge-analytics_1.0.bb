@@ -38,8 +38,9 @@ do_install() {
             -cf - .
     ) | (
         cd ${D}/opt/medtech/edge-analytics
-        tar -xf -
+        tar --no-same-owner --no-same-permissions -xf -
     )
+    chown -R root:root ${D}/opt/medtech/edge-analytics
 
     # Make all Python files executable (entry points and helpers)
     find ${D}/opt/medtech/edge-analytics -name "*.py" -exec chmod 0755 {} \;
