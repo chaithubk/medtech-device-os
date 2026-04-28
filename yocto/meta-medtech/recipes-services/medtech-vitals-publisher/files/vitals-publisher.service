@@ -5,7 +5,8 @@ After=network-online.target mosquitto.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/medtech/vitals-publisher/vitals_publisher.py
+WorkingDirectory=/opt/medtech/vitals-publisher
+ExecStart=/usr/bin/python3 -m src
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
