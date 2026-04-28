@@ -5,6 +5,8 @@ PV = "1.0"
 
 inherit systemd
 
+SRC_URI += "file://medtech-system.conf"
+
 # Runtime dependencies shared by all medtech services
 RDEPENDS:${PN} = " \
     python3 \
@@ -17,14 +19,16 @@ do_install() {
     # Create medtech directory layout
     install -d ${D}/opt/medtech
     install -d ${D}/opt/medtech/models
-    # On Yocto, /var/log is commonly a symlink to /var/volatile/log.
-    # Package the real path to avoid do_package symlink parent errors.
-    install -d ${D}${localstatedir}/volatile/log/medtech
     install -d ${D}/etc/medtech
+
+    # Install tmpfiles.d config to create /var/log/medtech at boot
+    # (do NOT pre-create /var/volatile dirs — they must be empty in the image)
+    install -d ${D}${sysconfdir}/tmpfiles.d
+    install -m 0644 ${WORKDIR}/medtech-system.conf ${D}${sysconfdir}/tmpfiles.d/medtech-system.conf
 }
 
 FILES:${PN} = " \
     /opt/medtech \
-    ${localstatedir}/volatile/log/medtech \
     /etc/medtech \
+    ${sysconfdir}/tmpfiles.d/medtech-system.conf \
 "
