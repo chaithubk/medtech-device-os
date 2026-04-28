@@ -31,10 +31,15 @@ EXTRA_OECMAKE = " \
     -DTFLITE_ENABLE_GPU=OFF \
     -DTFLITE_ENABLE_NNAPI=OFF \
     -DTFLITE_ENABLE_RUY=ON \
-    -DOVERRIDABLE_FETCH_CONTENT_LICENSE_CHECK=OFF \
     -DBUILD_SHARED_LIBS=ON \
     -DCMAKE_BUILD_TYPE=Release \
 "
+
+# CMakeLists.txt unconditionally sets OVERRIDABLE_FETCH_CONTENT_LICENSE_CHECK ON
+# at line 142, overriding any -D cmake flag. Patch it before configure runs.
+do_configure:prepend() {
+    sed -i 's/^set(OVERRIDABLE_FETCH_CONTENT_LICENSE_CHECK ON)/set(OVERRIDABLE_FETCH_CONTENT_LICENSE_CHECK OFF)/' ${S}/CMakeLists.txt
+}
 
 # Build only the core tflite library, not the full tools suite
 EXTRA_OECMAKE += "-DTFLITE_BUILD_SHARED_LIB=ON"
