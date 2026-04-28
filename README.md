@@ -44,7 +44,7 @@ mosquitto.service
 # Reopen folder in container
 # Cmd+Shift+P → Dev Containers: Reopen in Container
 
-# Initialize Yocto and local build config
+# Initialize Yocto and refresh generated local build config if needed
 bash scripts/quick-setup.sh
 
 # Build MedTech image as non-root (Yocto blocks root builds)

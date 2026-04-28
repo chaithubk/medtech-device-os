@@ -5,6 +5,20 @@
 
 set -e
 
+bblayers_needs_refresh() {
+    local file="$1"
+
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+
+    grep -Fq '${TOPDIR}/../meta-openembedded/meta-oe' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-openembedded/meta-python' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-openembedded/meta-networking' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-qt6' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-medtech' "$file"
+}
+
 cd /workspace
 
 echo "🔧 Quick Yocto Setup"
@@ -24,25 +38,35 @@ bash scripts/clone-with-retry.sh
 mkdir -p yocto/build
 cd yocto/build
 
-# 3. Initialize build env
-if [ ! -f "conf/local.conf" ]; then
+# 3. Initialize or refresh generated local config
+if [ ! -f "conf/local.conf" ] || [ ! -f "conf/bblayers.conf" ]; then
     echo "📋 Initializing build environment..."
     source ../poky/oe-init-build-env . > /dev/null 2>&1
-    
+
     echo "📋 Copying configuration..."
     cp ../conf/local.conf.sample conf/local.conf
     cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
-    if ! grep -q '^CONNECTIVITY_CHECK_URIS = "https://github.com/"' conf/local.conf; then
-        cat <<'EOF' >> conf/local.conf
+    echo "✅ Build environment ready"
+fi
+
+if ! bblayers_needs_refresh conf/bblayers.conf; then
+    echo "📋 Refreshing generated bblayers.conf from sample..."
+
+    if [ -f "conf/bblayers.conf" ]; then
+        cp conf/bblayers.conf "conf/bblayers.conf.bak"
+    fi
+
+    cp ../conf/bblayers.conf.sample conf/bblayers.conf
+fi
+
+if ! grep -q '^CONNECTIVITY_CHECK_URIS = "https://github.com/"' conf/local.conf; then
+    cat <<'EOF' >> conf/local.conf
 
 # Local dev-container environments can fail the default Yocto connectivity
 # sanity URL certificate chain; use a broadly reachable HTTPS endpoint.
 CONNECTIVITY_CHECK_URIS = "https://github.com/"
 EOF
-    fi
-    
-    echo "✅ Build environment ready"
 fi
 
 # 3. Show next step
