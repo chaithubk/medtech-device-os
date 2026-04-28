@@ -36,7 +36,7 @@ do_install() {
             -cf - .
     ) | (
         cd ${D}/opt/medtech/vitals-publisher
-        tar -xf -
+        tar --no-same-owner -xf -
     )
 
     # Make all Python files executable (entry points and helpers)

@@ -17,15 +17,18 @@ SRC_URI = " \
 S = "${WORKDIR}/git"
 
 DEPENDS = " \
+    mosquitto \
     qtbase \
     qtbase-native \
     qtdeclarative \
     qtmqtt \
+    qtsvg \
 "
 
 RDEPENDS:${PN} = " \
     qtbase \
     qtdeclarative \
+    qtsvg \
     fontconfig \
     freetype \
     medtech-system \
@@ -45,6 +48,17 @@ do_install:append() {
     if [ -f ${D}${bindir}/clinician-ui ]; then
         mv ${D}${bindir}/clinician-ui ${D}/opt/medtech/clinician-ui/clinician-ui
     fi
+    if [ -f ${D}${bindir}/dashboard ]; then
+        mv ${D}${bindir}/dashboard ${D}/opt/medtech/clinician-ui/clinician-ui
+    fi
+    if [ -d ${D}${datadir}/medtech-clinician-ui/qml ]; then
+        install -d ${D}/opt/medtech/clinician-ui
+        mv ${D}${datadir}/medtech-clinician-ui/qml ${D}/opt/medtech/clinician-ui/qml
+        rmdir --ignore-fail-on-non-empty ${D}${datadir}/medtech-clinician-ui || true
+    fi
+    rmdir --ignore-fail-on-non-empty ${D}${bindir} || true
+    rmdir --ignore-fail-on-non-empty ${D}${datadir} || true
+    rmdir --ignore-fail-on-non-empty ${D}/usr || true
 
     # Install Qt platform configuration
     install -d ${D}${sysconfdir}/medtech

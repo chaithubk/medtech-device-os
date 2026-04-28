@@ -1,7 +1,7 @@
 [Unit]
 Description=MedTech Clinician UI
-Wants=network-online.target medtech-edge-analytics.service
-After=network-online.target medtech-edge-analytics.service
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
