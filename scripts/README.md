@@ -38,7 +38,8 @@ bash scripts/build-robust.sh
 
 **Inside QEMU terminal console:**
 ```bash
-# Login: root (no password)
+# Login: root
+# Password: root
 systemctl status mosquitto
 systemctl status medtech-vitals-publisher
 mosquitto_sub -t "medtech/#" -v
@@ -47,7 +48,7 @@ mosquitto_sub -t "medtech/#" -v
 **SSH into QEMU from host** (port 2222):
 ```bash
 ssh -p 2222 root@localhost
-# Password: (press Enter — root has no password)
+# Password: root
 ```
 
 **Usage:**

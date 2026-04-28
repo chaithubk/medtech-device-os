@@ -1,7 +1,7 @@
 # medtech-image.bbclass
 # Minimal runtime image composition and post-processing for constrained CI builds.
 
-inherit core-image
+inherit core-image extrausers
 
 # Core runtime (small, production-relevant baseline only)
 MEDTECH_CORE_PKGS = " \
@@ -52,6 +52,11 @@ IMAGE_INSTALL:append = " \
 IMAGE_FEATURES = "ssh-server-openssh"
 IMAGE_FEATURES:remove = "debug-tweaks dbg-pkgs dev-pkgs tools-debug tools-profile tools-sdk"
 PACKAGE_EXCLUDE_COMPLEMENTARY = ".*-dbg|.*-dev|.*-staticdev"
+
+# QEMU/dev convenience: set a deterministic root password for console and SSH login.
+# NOTE: change this for production images.
+# Password is: root
+EXTRA_USERS_PARAMS = "usermod -p '\$6\$medtech\$740u6fNedx0nA9SngnkoyPLK4CzMswgec09ev5wJsPFH4GEOW4QN3oyLdS8f6wphE7Ub7i9.oqjez8ss75nue/' root;"
 
 IMAGE_ROOTFS_SIZE = "524288"
 IMAGE_OVERHEAD_FACTOR = "1.5"
