@@ -28,7 +28,6 @@ RDEPENDS:${PN} = " \
     qtdeclarative \
     fontconfig \
     freetype \
-    medtech-edge-analytics \
     medtech-system \
 "
 

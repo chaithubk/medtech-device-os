@@ -157,7 +157,6 @@ jobs:
           echo "=== PREFLIGHT: custom recipe URI validation ===" | tee -a build.log
           bitbake -k \
             python3-paho-mqtt \
-            tensorflow-lite \
             medtech-system \
             medtech-vitals-publisher \
             medtech-edge-analytics \
@@ -330,7 +329,7 @@ jobs:
           fi
 
           echo "=== REQUIRED PYTHON RUNTIME PACKAGES ==="
-          for pkg in python3 python3-paho-mqtt python3-numpy tensorflow-lite; do
+          for pkg in python3 python3-paho-mqtt python3-numpy; do
             if grep -Eq "^${pkg}\\b" "$MANIFEST"; then
               echo "OK: $pkg"
             else
