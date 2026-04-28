@@ -63,10 +63,19 @@ clone_with_retry() {
 # ── Layers ────────────────────────────────────────────────────────────────────
 
 # Poky (Yocto reference distro + BitBake)
-clone_with_retry \
-    "poky" \
-    "https://git.yoctoproject.org/git/poky" \
-    "kirkstone"
+if ! clone_with_retry \
+        "poky" \
+        "https://git.yoctoproject.org/git/poky" \
+        "kirkstone"; then
+    echo "   Primary URL failed — trying GitHub mirror..."
+    clone_with_retry \
+        "poky" \
+        "https://github.com/yoctoproject/poky.git" \
+        "kirkstone" || {
+        echo "   FAIL: poky could not be cloned from either source"
+        exit 1
+    }
+fi
 
 # meta-openembedded (provides meta-oe, meta-python, meta-networking, etc.)
 # NOTE: meta-python and meta-networking are subdirectories of this single repo;
@@ -85,7 +94,7 @@ if ! clone_with_retry \
     echo "   Primary URL failed — trying GitHub mirror..."
     clone_with_retry \
         "meta-qt6" \
-        "https://github.com/meta-qt6/meta-qt6.git" \
+        "https://github.com/YoeDistro/meta-qt6.git" \
         "6.4" || {
         echo "   FAIL: meta-qt6 could not be cloned from either source"
         echo "         clinician-ui will not build without meta-qt6"

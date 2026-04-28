@@ -44,14 +44,29 @@ mosquitto.service
 # Reopen folder in container
 # Cmd+Shift+P → Dev Containers: Reopen in Container
 
-# Initialize Yocto (first time only – clones poky + meta-openembedded)
+# Initialize Yocto and local build config
 bash scripts/quick-setup.sh
 
-# Build MedTech image (30–90 minutes first build)
-source yocto/poky/oe-init-build-env yocto/build
-cp yocto/conf/local.conf.sample conf/local.conf
-cp yocto/conf/bblayers.conf.sample conf/bblayers.conf
-bitbake core-image-medtech
+# Build MedTech image as non-root (Yocto blocks root builds)
+su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake core-image-medtech'
+```
+
+#### Build a Single Recipe Locally
+
+```bash
+# Example: build only the clinician UI recipe
+su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake medtech-clinician-ui'
+
+# Optional: force clean rebuild of that recipe
+su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake -c cleansstate medtech-clinician-ui && bitbake medtech-clinician-ui'
+```
+
+#### Build Full Image (Manual Path)
+
+```bash
+bash scripts/setup-devenv.sh
+bash scripts/clone-with-retry.sh
+su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && cp -n ../conf/local.conf.sample conf/local.conf && cp -n ../conf/bblayers.conf.sample conf/bblayers.conf && bitbake core-image-medtech'
 ```
 
 #### Boot in QEMU
@@ -132,12 +147,43 @@ ssh -p 2222 root@localhost
 
 ### CI/CD
 
-GitHub Actions (`.github/workflows/device-build.yml`) automatically:
+GitHub Actions (`.github/workflows/device-build-smart.yml`) automatically:
 1. Validates the layer structure
 2. Builds `core-image-medtech` with BitBake
 3. Generates and validates the CycloneDX SBOM
 4. Uploads the `.ext4` image and SBOM as artifacts
 5. Pushes a tagged Docker image to GHCR (`ghcr.io/<owner>/medtech-device-os/qemu-image`)
+
+CI notes:
+1. CI does not call `quick-setup.sh` or `setup-devenv.sh`; it runs explicit workflow steps.
+2. CI generates `yocto/build/conf/bblayers.conf` by copying `yocto/conf/bblayers.conf.sample` during each run.
+3. Local edits to `yocto/build/conf/bblayers.conf` do not affect CI unless the sample file and workflow are updated and committed.
+4. Local bootstrap scripts may append dev-container-only workarounds to `yocto/build/conf/local.conf`; those do not change CI behavior.
+
+#### Which Files Affect CI vs Local Builds?
+
+Files that affect CI behavior:
+1. `.github/workflows/device-build-smart.yml` — CI job definition and build steps.
+2. `yocto/conf/bblayers.conf.sample` — source for CI `bblayers.conf`.
+3. `yocto/conf/local.conf.sample` — source for CI `local.conf`.
+4. `yocto/meta-medtech/**` — recipes and layer metadata used by both CI and local builds.
+
+Files that are local/dev-container only:
+1. `.devcontainer/Dockerfile` and `.devcontainer/devcontainer.json` — local container setup.
+2. `scripts/setup-devenv.sh`, `scripts/quick-setup.sh`, and `scripts/clone-with-retry.sh` — local bootstrap helpers.
+3. `yocto/build/conf/bblayers.conf` and `yocto/build/conf/local.conf` — generated local build config files.
+
+#### Local Reproducible Build Notes
+
+The dev container includes a few local-only adjustments so builds are reproducible after reopening or rebuilding the container:
+
+1. Installs missing Yocto host tools in the dev container.
+2. Uses a non-root `builder` user because BitBake refuses root builds.
+3. Ensures `/workspace` is writable by `builder`.
+4. Uses retry and mirror fallback for layer fetches in environments with proxy or TLS/certificate issues.
+5. Adds a local-only `CONNECTIVITY_CHECK_URIS` override to the generated local `local.conf` when needed.
+
+These local workarounds are intended to make dev-container builds reproducible without changing the CI pipeline behavior.
 
 ### Disk Space Optimization
 
