@@ -2,7 +2,6 @@
 yocto/build/*
 !yocto/build/conf/
 yocto/build/conf/*
-!yocto/build/conf/bblayers.conf
 yocto/poky/
 yocto/meta-openembedded/
 yocto/meta-qt6/

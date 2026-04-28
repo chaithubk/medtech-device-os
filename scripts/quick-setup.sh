@@ -24,6 +24,10 @@ cd /workspace
 echo "🔧 Quick Yocto Setup"
 echo ""
 
+if [ "$(id -u)" -eq 0 ]; then
+    ln -sf /workspace/scripts/bitbake /usr/local/bin/bitbake
+fi
+
 # 1. Ensure Poky exists (auto-bootstrap if missing)
 if [ ! -d "yocto/poky" ]; then
     echo "📥 Poky not found. Running setup-devenv.sh..."
@@ -73,8 +77,8 @@ fi
 echo ""
 echo "Ready to build! Run:"
 echo "  # Full image build"
-echo "  su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake core-image-medtech'"
+echo "  bitbake core-image-medtech"
 echo ""
 echo "  # Single recipe build"
-echo "  su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake medtech-clinician-ui'"
+echo "  bitbake medtech-clinician-ui"
 echo ""

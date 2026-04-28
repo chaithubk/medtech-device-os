@@ -1,0 +1,52 @@
+#!/bin/bash
+
+set -e
+
+PROJECT_ROOT="/workspace"
+BUILD_DIR="$PROJECT_ROOT/yocto/build"
+OE_INIT="$PROJECT_ROOT/yocto/poky/oe-init-build-env"
+REAL_BITBAKE="$PROJECT_ROOT/yocto/poky/bitbake/bin/bitbake"
+
+bblayers_ready() {
+    local file="$BUILD_DIR/conf/bblayers.conf"
+
+    [ -f "$file" ] \
+        && grep -Fq '${TOPDIR}/../meta-openembedded/meta-oe' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-openembedded/meta-python' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-openembedded/meta-networking' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-qt6' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-medtech' "$file"
+}
+
+ensure_local_build_setup() {
+    if [ ! -f "$OE_INIT" ] \
+        || [ ! -d "$PROJECT_ROOT/yocto/meta-openembedded" ] \
+        || [ ! -d "$PROJECT_ROOT/yocto/meta-qt6" ] \
+        || [ ! -f "$BUILD_DIR/conf/local.conf" ] \
+        || ! bblayers_ready; then
+        bash "$PROJECT_ROOT/scripts/quick-setup.sh" >/dev/null
+    fi
+}
+
+run_bitbake_as_builder() {
+    local quoted_args=""
+    local arg
+
+    for arg in "$@"; do
+        printf -v arg '%q' "$arg"
+        quoted_args+=" ${arg}"
+    done
+
+    exec su - builder -c "cd '$PROJECT_ROOT' && bash scripts/quick-setup.sh >/dev/null && source yocto/poky/oe-init-build-env yocto/build >/dev/null && exec '$REAL_BITBAKE'${quoted_args}"
+}
+
+ensure_local_build_setup
+
+if [ "$(id -u)" -eq 0 ]; then
+    run_bitbake_as_builder "$@"
+fi
+
+cd "$PROJECT_ROOT"
+# shellcheck disable=SC1091
+source "$OE_INIT" "$BUILD_DIR" >/dev/null
+exec "$REAL_BITBAKE" "$@"

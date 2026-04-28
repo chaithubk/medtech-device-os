@@ -22,7 +22,7 @@
       }
     }
   },
-  "postCreateCommand": "bash /workspace/scripts/setup-devenv.sh",
+  "postCreateCommand": "bash /workspace/scripts/quick-setup.sh",
   "forwardPorts": [2222, 1883, 5005],
   "portsAttributes": {
     "2222": {
@@ -40,6 +40,7 @@
   },
   "remoteUser": "root",
   "remoteEnv": {
+    "PATH": "/workspace/scripts:${containerEnv:PATH}",
     "YOCTO_BRANCH": "kirkstone",
     "MACHINE": "qemuarm64",
     "DISTRO": "poky",

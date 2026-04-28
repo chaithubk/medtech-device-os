@@ -44,21 +44,20 @@ mosquitto.service
 # Reopen folder in container
 # Cmd+Shift+P → Dev Containers: Reopen in Container
 
-# Initialize Yocto and refresh generated local build config if needed
-bash scripts/quick-setup.sh
-
-# Build MedTech image as non-root (Yocto blocks root builds)
-su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake core-image-medtech'
+# The dev container post-create step runs quick-setup automatically.
+# After the container is ready, build directly:
+bitbake core-image-medtech
 ```
 
 #### Build a Single Recipe Locally
 
 ```bash
 # Example: build only the clinician UI recipe
-su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake medtech-clinician-ui'
+bitbake medtech-clinician-ui
 
 # Optional: force clean rebuild of that recipe
-su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/build >/dev/null && bitbake -c cleansstate medtech-clinician-ui && bitbake medtech-clinician-ui'
+bitbake -c cleansstate medtech-clinician-ui
+bitbake medtech-clinician-ui
 ```
 
 #### Build Full Image (Manual Path)
