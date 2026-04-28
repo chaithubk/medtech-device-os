@@ -73,6 +73,26 @@ CONNECTIVITY_CHECK_URIS = "https://github.com/"
 EOF
 fi
 
+if ! grep -q '^QT_GIT_PROTOCOL = "https"' conf/local.conf; then
+    cat <<'EOF' >> conf/local.conf
+
+# Local-only: keep git:// URL form for bitbake git fetcher, but force
+# transport over HTTPS to avoid blocked git:// traffic.
+QT_GIT_PROTOCOL = "https"
+EOF
+fi
+
+if ! grep -q 'git://code.qt.io/qt/(.*)' conf/local.conf; then
+    cat <<'EOF' >> conf/local.conf
+
+# Local-only: if code.qt.io is blocked or has TLS chain issues, fall back to
+# the official Qt GitHub mirror for qt/* repositories.
+PREMIRRORS:append = " \
+git://code.qt.io/qt/(.*) git://github.com/qt/\1;protocol=https \n \
+"
+EOF
+fi
+
 # 3. Show next step
 echo ""
 echo "Ready to build! Run:"

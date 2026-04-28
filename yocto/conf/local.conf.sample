@@ -112,3 +112,8 @@ SPDX_INCLUDE_SOURCES = "0"
 # Output directory (under DEPLOY_DIR_IMAGE)
 SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
 
+
+# Use a broadly reachable HTTPS endpoint for Yocto connectivity sanity checks
+# across both local and CI environments.
+CONNECTIVITY_CHECK_URIS = "https://github.com/"
+
