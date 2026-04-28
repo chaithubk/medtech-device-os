@@ -36,18 +36,35 @@ bash scripts/build-robust.sh
 - SSH available on localhost:2222
 - Suitable for: sanity checks inside QEMU, testing services
 
+**Inside QEMU terminal console:**
+```bash
+# Login: root (no password)
+systemctl status mosquitto
+systemctl status medtech-vitals-publisher
+mosquitto_sub -t "medtech/#" -v
+```
+
+**SSH into QEMU from host** (port 2222):
+```bash
+ssh -p 2222 root@localhost
+# Password: (press Enter — root has no password)
+```
+
 **Usage:**
 ```bash
 bash scripts/run-qemu.sh              # nographic (terminal mode)
 bash scripts/run-qemu.sh --graphics   # with GUI
 ```
 
-**Inside QEMU:**
+### `test-qemu.sh`
+Automated test script that SSH's into the running QEMU image and verifies services.
+- Waits for SSH daemon to start (up to 60 seconds)
+- Checks system info, running services, MQTT topics
+- Suitable for: validating full boot without manual SSH
+
+**Usage:**
 ```bash
-# Login: root (no password)
-systemctl status mosquitto
-systemctl status medtech-vitals-publisher
-mosquitto_sub -t "medtech/#" -v
+bash scripts/test-qemu.sh
 ```
 
 ---
