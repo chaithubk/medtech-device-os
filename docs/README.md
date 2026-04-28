@@ -5,6 +5,11 @@ This folder documents the CI-first debugging and hardening procedures used to de
 ## Documents
 
 - [Yocto CI Failure Detection Runbook](./yocto-ci-failure-detection.md)
+- [Yocto Fetch And Mirror Notes](./yocto-fetch-and-mirror-notes.md)
+- [Yocto Generated Config Notes](./yocto-generated-config-notes.md)
+- [Yocto Local Recovery Notes](./yocto-local-recovery-notes.md)
+- [Yocto Single-Recipe Build Notes](./yocto-single-recipe-build-notes.md)
+- [Yocto Build Pause/Resume Notes](./yocto-build-pause-resume-notes.md)
 
 ## Local vs CI Build Notes
 
