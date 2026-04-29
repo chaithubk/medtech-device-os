@@ -148,10 +148,36 @@ ssh -p 2222 root@localhost
 
 GitHub Actions (`.github/workflows/device-build-smart.yml`) automatically:
 1. Validates the layer structure
-2. Builds `core-image-medtech` with BitBake
-3. Generates and validates the CycloneDX SBOM
-4. Uploads the `.ext4` image and SBOM as artifacts
-5. Pushes a tagged Docker image to GHCR (`ghcr.io/<owner>/medtech-device-os/qemu-image`)
+2. Builds `core-image-minimal` for pull requests and `core-image-medtech` for pushes to `main`
+3. Runs the medtech-specific manifest and Python runtime checks on `main` builds
+4. Uploads the built `.ext4` image as an artifact
+5. Uploads the SPDX SBOM for `core-image-medtech` builds
+6. Pushes a tagged Docker image to GHCR (`ghcr.io/<owner>/medtech-device-os/qemu-image`)
+
+#### Build Artifacts, Archives, and Retention
+
+Successful workflow runs archive the built image in GitHub Actions artifacts.
+
+1. Pull request runs archive `core-image-minimal-qemuarm64.ext4`.
+2. Pushes to `main` archive `core-image-medtech-qemuarm64.ext4`.
+3. Artifact name in GitHub Actions for PR runs: `qemu-image-minimal`.
+4. Artifact name in GitHub Actions for `main` branch runs: `qemu-image-medtech`.
+5. Artifact retention: 30 days.
+
+To find a successfully built image in GitHub:
+
+1. Open the repository on GitHub.
+2. Go to the **Actions** tab.
+3. Open the workflow run for the pull request or the `main` branch push you care about.
+4. In the run summary, open the **Artifacts** section.
+5. Download `qemu-image-minimal` for PR runs or `qemu-image-medtech` for `main` branch runs.
+6. Extract it locally to get the built `.ext4` image.
+
+Notes:
+
+1. PR runs are intended as a lightweight sanity check, so the archived image is the minimal image.
+2. After a PR is merged, the push to `main` runs the full `core-image-medtech` build and archives that image separately.
+3. If a build fails before the packaging step, the final image artifact may not exist, but failure debug artifacts can still be uploaded by the workflow.
 
 CI notes:
 1. CI does not call `quick-setup.sh` or `setup-devenv.sh`; it runs explicit workflow steps.
