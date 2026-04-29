@@ -10,6 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/qemu-image
+  CI_BUILD_IMAGE: core-image-minimal
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -163,14 +164,14 @@ jobs:
             medtech-clinician-ui \
             -c checkuri 2>&1 | tee -a build.log
 
-      - name: Build core-image-medtech
+      - name: Build CI image
         run: |
           cd yocto/build
           source ../poky/oe-init-build-env . > /dev/null 2>&1
 
           set -o pipefail
-          echo "=== BITBAKE BUILD (rm_work expected in local.conf) ===" | tee -a build.log
-          bitbake -k core-image-medtech 2>&1 | tee -a build.log
+          echo "=== BITBAKE BUILD: ${CI_BUILD_IMAGE} (rm_work expected in local.conf) ===" | tee -a build.log
+          bitbake -k "${CI_BUILD_IMAGE}" 2>&1 | tee -a build.log
 
       - name: Dump failed BitBake task logs
         if: failure()
@@ -290,7 +291,7 @@ jobs:
 
       - name: Verify image was built
         run: |
-          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4"
+          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.ext4"
           if [ -f "$IMAGE" ]; then
             SIZE=$(du -sh "$IMAGE" | cut -f1)
             echo "Image built successfully: $SIZE"
@@ -302,7 +303,7 @@ jobs:
 
       - name: Enforce no debug/dev packages in final image
         run: |
-          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.manifest"
+          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.manifest"
           if [ ! -f "$MANIFEST" ]; then
             echo "Manifest not found: $MANIFEST"
             exit 1
@@ -321,8 +322,9 @@ jobs:
           echo "Manifest policy check passed"
 
       - name: Sanity check Python runtime coverage
+        if: env.CI_BUILD_IMAGE == 'core-image-medtech'
         run: |
-          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.manifest"
+          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.manifest"
           if [ ! -f "$MANIFEST" ]; then
             echo "Manifest not found: $MANIFEST"
             exit 1
@@ -367,6 +369,7 @@ jobs:
           echo "Python runtime sanity checks passed"
 
       - name: Process SPDX SBOM
+        if: env.CI_BUILD_IMAGE == 'core-image-medtech'
         run: |
           echo "=== Collecting SPDX SBOM ==="
           bash scripts/process-sbom.sh
@@ -376,7 +379,7 @@ jobs:
           mkdir -p artifacts
           DEPLOY="yocto/build/tmp/deploy/images/qemuarm64"
 
-          cp "$DEPLOY/core-image-medtech-qemuarm64.ext4" artifacts/
+          cp "$DEPLOY/${CI_BUILD_IMAGE}-qemuarm64.ext4" artifacts/
           cp "$DEPLOY/Image" artifacts/ 2>/dev/null || true
           cp "$DEPLOY/qemuarm64.dtb" artifacts/ 2>/dev/null || true
 
