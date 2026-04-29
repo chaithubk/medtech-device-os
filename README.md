@@ -221,7 +221,7 @@ The build is optimized for GitHub Actions runners (limited to ~14 GB disk space)
 - **No SPDX sources**: `SPDX_INCLUDE_SOURCES = "0"` (~500 MB-1 GB saved)
 - **CI pre-build cleanup**: Removes dotnet, android, ghc, CodeQL (~12-15 GB freed)
 
-See [`DISK_OPTIMIZATION.md`](DISK_OPTIMIZATION.md) for detailed strategy.
+See [`DISK_OPTIMIZATION.md`](/docs/DISK_OPTIMIZATION.md) for detailed strategy.
 
 ### Layer Structure
 
