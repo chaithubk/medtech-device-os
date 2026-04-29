@@ -160,7 +160,6 @@ jobs:
             python3-paho-mqtt \
             medtech-system \
             medtech-vitals-publisher \
-            medtech-edge-analytics \
             medtech-clinician-ui \
             -c checkuri 2>&1 | tee -a build.log
 
@@ -331,7 +330,7 @@ jobs:
           fi
 
           echo "=== REQUIRED PYTHON RUNTIME PACKAGES ==="
-          for pkg in python3 python3-paho-mqtt python3-numpy; do
+          for pkg in python3 python3-paho-mqtt; do
             if grep -Eq "^${pkg}\\b" "$MANIFEST"; then
               echo "OK: $pkg"
             else

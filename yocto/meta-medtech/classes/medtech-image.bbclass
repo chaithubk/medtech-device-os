@@ -3,6 +3,13 @@
 
 inherit core-image extrausers
 
+# Keep baseline lean: avoid pulling packagegroup-base-extended and feature-driven extras.
+CORE_IMAGE_BASE_INSTALL = "packagegroup-core-boot"
+
+# Drop optional platform features not needed by the current service set.
+# This helps reduce transitive dependencies and build time.
+DISTRO_FEATURES:remove = "ptest pulseaudio bluetooth wifi nfc 3g zeroconf gobject-introspection-data"
+
 # Core runtime (small, production-relevant baseline only)
 MEDTECH_CORE_PKGS = " \
     systemd \
@@ -15,7 +22,6 @@ MEDTECH_CORE_PKGS = " \
 # Python runtime for services
 MEDTECH_PYTHON_PKGS = " \
     python3 \
-    python3-numpy \
 "
 
 # MQTT stack
