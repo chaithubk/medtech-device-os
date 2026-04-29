@@ -22,12 +22,29 @@ fi
 
 echo "✅ Git available"
 
+# Ensure non-root build user exists (BitBake sanity check blocks root).
+if id -u builder > /dev/null 2>&1; then
+    echo "✅ Build user 'builder' already exists"
+else
+    if [ "$(id -u)" -eq 0 ]; then
+        useradd -m -s /bin/bash builder
+        echo "✅ Created build user 'builder'"
+    else
+        echo "⚠️  User 'builder' not found and current user is not root; skipping user creation"
+    fi
+fi
+
 # Create build directories
 mkdir -p yocto/build
 mkdir -p yocto/downloads
 mkdir -p yocto/sstate-cache
 
 echo "✅ Build directories created"
+
+# Keep workspace writable by the build user when running in the dev container.
+if [ "$(id -u)" -eq 0 ] && id -u builder > /dev/null 2>&1; then
+    chown -R builder:builder /workspace || true
+fi
 
 # Set up Yocto (clone Poky if not exists)
 if [ ! -d "yocto/poky" ]; then
@@ -38,9 +55,14 @@ if [ ! -d "yocto/poky" ]; then
     
     mkdir -p yocto
     cd yocto
-    
-    # Clone with progress
-    git clone --progress -b kirkstone https://git.yoctoproject.org/git/poky poky
+
+    # Clone with progress. Prefer upstream Yocto; fall back to GitHub mirror
+    # in environments where enterprise trust stores break this endpoint's chain.
+    if ! git clone --progress -b kirkstone https://git.yoctoproject.org/git/poky poky; then
+        echo ""
+        echo "⚠️  Upstream Yocto clone failed; trying GitHub mirror..."
+        git clone --progress -b kirkstone https://github.com/yoctoproject/poky.git poky
+    fi
     
     cd ..
     echo ""
@@ -53,13 +75,10 @@ echo ""
 echo "=== ✅ Yocto environment ready! ==="
 echo ""
 echo "Next steps:"
-echo "  1. Initialize build environment:"
-echo "     source /workspace/yocto/poky/oe-init-build-env /workspace/yocto/build"
+echo "  1. Complete local build setup:"
+echo "     bash /workspace/scripts/quick-setup.sh"
 echo ""
-echo "  2. Copy configuration templates:"
-echo "     cp ../conf/local.conf.sample conf/local.conf"
-echo "     cp ../conf/bblayers.conf.sample conf/bblayers.conf"
-echo ""
-echo "  3. Build minimal image:"
-echo "     bitbake core-image-minimal"
+echo "  2. Build directly:"
+echo "     bitbake medtech-clinician-ui"
+echo "     bitbake core-image-medtech"
 echo ""

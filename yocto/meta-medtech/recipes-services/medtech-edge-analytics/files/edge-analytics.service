@@ -1,0 +1,18 @@
+[Unit]
+Description=MedTech Edge Analytics
+Wants=network-online.target medtech-vitals-publisher.service
+After=network-online.target medtech-vitals-publisher.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/medtech/edge-analytics/edge_analytics.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=edge-analytics
+EnvironmentFile=/etc/medtech/edge-analytics.env
+User=root
+
+[Install]
+WantedBy=multi-user.target

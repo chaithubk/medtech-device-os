@@ -1,0 +1,19 @@
+[Unit]
+Description=MedTech Clinician UI
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+Environment="QT_QPA_PLATFORM=offscreen"
+ExecStart=/opt/medtech/clinician-ui/clinician-ui
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clinician-ui
+EnvironmentFile=/etc/medtech/clinician-ui.env
+User=root
+
+[Install]
+WantedBy=multi-user.target

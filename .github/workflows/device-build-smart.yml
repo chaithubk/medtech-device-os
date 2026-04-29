@@ -1,0 +1,432 @@
+name: Smart Device OS Build
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/qemu-image
+  CI_BUILD_IMAGE: ${{ github.event_name == 'pull_request' && 'core-image-minimal' || 'core-image-medtech' }}
+  GIT_TERMINAL_PROMPT: "0"
+
+jobs:
+  build:
+    name: Build Yocto Image
+    runs-on: ubuntu-22.04
+    # GitHub-hosted runners cap a single job at 360 minutes.
+    timeout-minutes: 360
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space on GitHub runner
+        run: |
+          echo "=== BEFORE CLEANUP ==="
+          df -h / | head -2
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /opt/hostedtoolcache/PyPy
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf /opt/hostedtoolcache/Python
+          sudo rm -rf /opt/hostedtoolcache/stack
+
+          sudo docker image prune -af
+          sudo docker container prune -f
+          sudo docker volume prune -f
+
+          sudo apt-get purge -y llvm-* gcc-* g++ gfortran-* mingw-* golang ruby ruby-* \
+            php* dotnet-* powershell mono-* mysql-* postgresql-* 2>/dev/null || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+          sudo systemctl stop snapd || true
+          sudo snap remove --purge amazon-linux-agent 2>/dev/null || true
+          sudo snap remove --purge lxd 2>/dev/null || true
+          sudo snap remove --purge core20 2>/dev/null || true
+          sudo snap remove --purge snapd 2>/dev/null || true
+          sudo rm -rf /var/lib/snapd /snap
+
+          echo ""
+          echo "=== AFTER CLEANUP ==="
+          df -h / | head -2
+          echo ""
+          AVAIL_GB=$(df -BG / | awk 'NR==2 {gsub("G", "", $4); print $4}')
+          echo "Available disk: ${AVAIL_GB} GB (target: >=12 GB)"
+          if (( AVAIL_GB < 12 )); then
+            echo "WARNING: Less than 12 GB available; build may fail."
+          fi
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gawk wget git diffstat unzip texinfo gcc g++ build-essential \
+            chrpath socat cpio python3 python3-pip python3-pexpect \
+            xz-utils debianutils iputils-ping curl file locales \
+            autoconf automake libtool pkg-config gettext \
+            patch perl bison flex gperf \
+            qemu-system-arm qemu-system-x86 qemu-user-static
+          echo "Build environment ready"
+
+      - name: Clone Poky kirkstone (shallow)
+        run: |
+          mkdir -p yocto
+          cd yocto
+          git clone -b kirkstone --depth 1 https://git.yoctoproject.org/git/poky poky
+          du -sh poky
+
+      - name: Clone meta-openembedded (keep essential sublayers only)
+        run: |
+          cd yocto
+          git clone -b kirkstone --depth 1 \
+            https://github.com/openembedded/meta-openembedded.git meta-openembedded
+
+          find meta-openembedded -mindepth 1 -maxdepth 1 -type d \
+            ! -name meta-oe \
+            ! -name meta-python \
+            ! -name meta-networking \
+            -exec rm -rf {} +
+
+          du -sh meta-openembedded
+
+      - name: Clone meta-qt6
+        run: |
+          cd yocto
+          git clone -b 6.4 --depth 1 \
+            https://code.qt.io/yocto/meta-qt6.git meta-qt6 \
+            || git clone -b 6.4 --depth 1 \
+              https://github.com/meta-qt6/meta-qt6.git meta-qt6
+          du -sh meta-qt6
+
+      - name: Initialize build directory
+        run: |
+          cd yocto
+          source poky/oe-init-build-env build > /dev/null 2>&1
+          cp ../conf/local.conf.sample conf/local.conf
+          cp ../conf/bblayers.conf.sample conf/bblayers.conf
+
+          echo "# GitHub-hosted runners do not persist build cache between jobs" >> conf/local.conf
+          echo "SSTATE_MIRRORS = \"\"" >> conf/local.conf
+          echo "Build directory initialized"
+
+      - name: Pre-build disk audit
+        run: |
+          echo "=== PRE-BUILD DISK AUDIT ==="
+          du -sh yocto/* 2>/dev/null | sort -rh || true
+          echo ""
+          df -h
+          echo ""
+          echo "Estimated peak TMPDIR usage:"
+          echo "  bitbake parsing: 2-3 GB"
+          echo "  fetch phase: 5-8 GB"
+          echo "  build phase: 20-30 GB"
+          echo "  image phase: 5-10 GB"
+          echo "  SPDX SBOM: 500 MB"
+          echo "  TOTAL PEAK: 33-52 GB (without aggressive minimization)"
+          echo ""
+
+          AVAIL_GB=$(df -BG / | awk 'NR==2 {gsub("G", "", $4); print $4}')
+          echo "Available: ${AVAIL_GB} GB"
+          if (( AVAIL_GB < 5 )); then
+            echo "CRITICAL: Less than 5 GB available; build will fail."
+            exit 1
+          fi
+
+      - name: Yocto preflight (fast-fail metadata and URI checks)
+        run: |
+          cd yocto/build
+          source ../poky/oe-init-build-env . > /dev/null 2>&1
+
+          set -o pipefail
+          : > build.log
+
+          echo "=== PREFLIGHT: metadata parse and provider resolution ===" | tee -a build.log
+          # Parse metadata once and fail fast on layer/config breakage.
+          bitbake -p 2>&1 | tee -a build.log
+
+          echo "=== PREFLIGHT: custom recipe URI validation ===" | tee -a build.log
+          bitbake -k \
+            python3-paho-mqtt \
+            medtech-system \
+            medtech-vitals-publisher \
+            medtech-clinician-ui \
+            -c checkuri 2>&1 | tee -a build.log
+
+      - name: Build CI image
+        run: |
+          cd yocto/build
+          source ../poky/oe-init-build-env . > /dev/null 2>&1
+
+          set -o pipefail
+          echo "=== BITBAKE BUILD: ${CI_BUILD_IMAGE} (rm_work expected in local.conf) ===" | tee -a build.log
+          bitbake -k "${CI_BUILD_IMAGE}" 2>&1 | tee -a build.log
+
+      - name: Dump failed BitBake task logs
+        if: failure()
+        run: |
+          echo "=== FAILED TASK LOG TAILS ==="
+          cd yocto/build
+
+          if [ -f build.log ]; then
+            echo ""
+            echo "=== FAILED TASKS FROM build.log ==="
+            grep -nE "ERROR: Task \([^)]*\) failed" build.log | tail -n 20 || true
+          fi
+
+          echo ""
+          echo "=== HOST TOOL VERSIONS (native configure context) ==="
+          autoconf --version | head -n 1 || true
+          automake --version | head -n 1 || true
+          libtoolize --version | head -n 1 || true
+          gettext --version | head -n 1 || true
+          autopoint --version | head -n 1 || true
+          bison --version | head -n 1 || true
+          flex --version | head -n 1 || true
+          patch --version | head -n 1 || true
+          diff --version | head -n 1 || true
+
+          FAILED_BB=""
+          if [ -f build.log ]; then
+            FAILED_BB=$(grep -E "ERROR: Task \([^)]*\.bb:[^)]+\) failed" build.log | tail -n 1 | sed -E 's#.*Task \(([^)]*\.bb):[^)]*\).*#\1#' || true)
+          fi
+          FAILED_BASENAME=$(basename "$FAILED_BB" .bb)
+          FAILED_PN="${FAILED_BASENAME%_*}"
+
+          echo ""
+          echo "=== DETECTED FAILED RECIPE ==="
+          echo "FAILED_BB=$FAILED_BB"
+          echo "FAILED_PN=$FAILED_PN"
+
+          if [ -z "$FAILED_PN" ]; then
+            echo "Could not infer failed recipe name from build.log; skipping targeted tail dump."
+            exit 0
+          fi
+
+          find tmp/work -type f -path "*/${FAILED_PN}/*/temp/log.do_*" | sort > /tmp/bitbake-task-logs.txt || true
+          tail -n 40 /tmp/bitbake-task-logs.txt || true
+
+          while IFS= read -r logfile; do
+            echo ""
+            echo "--- $logfile ---"
+            tail -n 120 "$logfile" || true
+          done < <(tail -n 12 /tmp/bitbake-task-logs.txt)
+
+          echo ""
+          echo "=== TARGETED CONFIG LOG FOR FAILED RECIPE ==="
+          find tmp/work -type f -path "*/${FAILED_PN}/*/build/config.log" -print -exec tail -n 200 {} \; || true
+
+      - name: Collect failed recipe debug logs
+        if: failure()
+        run: |
+          mkdir -p artifacts-debug
+          cd yocto/build
+
+          FAILED_BB=""
+          if [ -f build.log ]; then
+            FAILED_BB=$(grep -E "ERROR: Task \([^)]*\.bb:[^)]+\) failed" build.log | tail -n 1 | sed -E 's#.*Task \(([^)]*\.bb):[^)]*\).*#\1#' || true)
+          fi
+          FAILED_BASENAME=$(basename "$FAILED_BB" .bb)
+          FAILED_PN="${FAILED_BASENAME%_*}"
+
+          {
+            echo "FAILED_BB=$FAILED_BB"
+            echo "FAILED_PN=$FAILED_PN"
+          } > ../../artifacts-debug/failed-recipe-summary.txt
+
+          cp build.log ../../artifacts-debug/ 2>/dev/null || true
+
+          if [ -n "$FAILED_PN" ]; then
+            find tmp/work -type f -path "*/${FAILED_PN}/*/temp/log.do_*" -exec cp --parents {} ../../artifacts-debug/ \; 2>/dev/null || true
+            find tmp/work -type f -path "*/${FAILED_PN}/*/temp/run.do_*" -exec cp --parents {} ../../artifacts-debug/ \; 2>/dev/null || true
+            find tmp/work -type f -path "*/${FAILED_PN}/*/build/config.log" -exec cp --parents {} ../../artifacts-debug/ \; 2>/dev/null || true
+            bitbake -e "$FAILED_PN" > ../../artifacts-debug/bitbake-env-${FAILED_PN}.txt 2>/dev/null || true
+          fi
+
+          cd ../..
+          echo "=== DEBUG ARTIFACTS READY (FAILED RECIPE ONLY) ==="
+          find artifacts-debug -type f | head -n 200 || true
+
+      - name: Upload failed recipe debug logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yocto-debug-failed-recipe
+          path: artifacts-debug/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Clean up build artifacts to free space
+        if: always()
+        run: |
+          echo "=== POST-BUILD CLEANUP ==="
+
+          cd yocto/build
+          echo "Before cleanup:"
+          du -sh tmp/ 2>/dev/null || true
+          rm -rf tmp/work 2>/dev/null || true
+          rm -rf tmp/work-shared 2>/dev/null || true
+          rm -rf tmp/sysroots-components 2>/dev/null || true
+          rm -rf tmp/cache 2>/dev/null || true
+          echo "After cleanup:"
+          du -sh tmp/ 2>/dev/null || true
+
+          rm -rf ../sstate-cache 2>/dev/null || true
+          rm -rf ../downloads 2>/dev/null || true
+
+          echo ""
+          echo "=== POST-BUILD DISK STATUS ==="
+          df -h / | tail -1
+
+      - name: Verify image was built
+        run: |
+          IMAGE="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.ext4"
+          if [ -f "$IMAGE" ]; then
+            SIZE=$(du -sh "$IMAGE" | cut -f1)
+            echo "Image built successfully: $SIZE"
+            file "$IMAGE"
+          else
+            echo "Image not found"
+            exit 1
+          fi
+
+      - name: Enforce no debug/dev packages in final image
+        run: |
+          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.manifest"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Manifest not found: $MANIFEST"
+            exit 1
+          fi
+
+          if grep -E '(-dbg|-dev|-staticdev)\b' "$MANIFEST"; then
+            echo "Found forbidden debug/development packages in image manifest"
+            exit 1
+          fi
+
+          if grep -E '\b(gdb|strace|ltrace|perf|valgrind|quilt)\b' "$MANIFEST"; then
+            echo "Found forbidden debug tooling packages in image manifest"
+            exit 1
+          fi
+
+          echo "Manifest policy check passed"
+
+      - name: Sanity check Python runtime coverage
+        if: env.CI_BUILD_IMAGE == 'core-image-medtech'
+        run: |
+          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.manifest"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Manifest not found: $MANIFEST"
+            exit 1
+          fi
+
+          echo "=== REQUIRED PYTHON RUNTIME PACKAGES ==="
+          for pkg in python3 python3-paho-mqtt; do
+            if grep -Eq "^${pkg}\\b" "$MANIFEST"; then
+              echo "OK: $pkg"
+            else
+              echo "MISSING: $pkg"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "=== STDLIB MODULE PROVIDER CHECKS (SANITY) ==="
+          check_any() {
+            module_name="$1"
+            pattern="$2"
+            if grep -Eq "$pattern" "$MANIFEST"; then
+              echo "OK: ${module_name} provider present"
+            else
+              echo "MISSING: ${module_name} provider not found in manifest"
+              exit 1
+            fi
+          }
+
+          check_any "argparse" "^(python3-argparse|python3-core|python3-misc)\\b"
+          check_any "json" "^(python3-json|python3-core|python3-misc)\\b"
+          check_any "logging" "^(python3-logging|python3-core|python3-misc)\\b"
+          check_any "threading" "^(python3-threading|python3-core|python3-misc)\\b"
+          check_any "typing" "^(python3-typing|python3-core|python3-misc)\\b"
+
+          echo ""
+          echo "=== REGRESSION GUARD ==="
+          if grep -Eq "^python3-modules\\b" "$MANIFEST"; then
+            echo "Unexpected python3-modules found in image manifest"
+            exit 1
+          fi
+
+          echo "Python runtime sanity checks passed"
+
+      - name: Process SPDX SBOM
+        if: env.CI_BUILD_IMAGE == 'core-image-medtech'
+        run: |
+          echo "=== Collecting SPDX SBOM ==="
+          bash scripts/process-sbom.sh
+
+      - name: Package artifacts for upload
+        run: |
+          mkdir -p artifacts
+          DEPLOY="yocto/build/tmp/deploy/images/qemuarm64"
+
+          cp "$DEPLOY/${CI_BUILD_IMAGE}-qemuarm64.ext4" artifacts/
+          cp "$DEPLOY/Image" artifacts/ 2>/dev/null || true
+          cp "$DEPLOY/qemuarm64.dtb" artifacts/ 2>/dev/null || true
+
+          cp sbom/*.spdx.json artifacts/ 2>/dev/null || true
+          cp sbom/*.spdx.rdf artifacts/ 2>/dev/null || true
+          cp sbom/*.json artifacts/ 2>/dev/null || true
+          cp sbom/*.rdf artifacts/ 2>/dev/null || true
+
+          rm -rf yocto
+
+          echo "=== ARTIFACTS READY ==="
+          ls -lh artifacts/
+          du -sh artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.CI_BUILD_IMAGE == 'core-image-minimal' && 'qemu-image-minimal' || 'qemu-image-medtech' }}
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Build and push QEMU image to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "=== Building and pushing QEMU image to GHCR ==="
+          
+          # Set image tag based on branch/event
+          IMAGE_TAG="${{ github.sha }}"
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            IMAGE_TAG="latest"
+          fi
+          
+          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image:${IMAGE_TAG}"
+          echo "Building: $FULL_IMAGE_REF"
+          
+          # Build using Dockerfile.qemu-artifacts
+          docker build -f Dockerfile.qemu-artifacts -t "$FULL_IMAGE_REF" .
+          
+          # Authenticate to GHCR and push
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker push "$FULL_IMAGE_REF"
+          
+          echo "Successfully pushed: $FULL_IMAGE_REF"
+
+      - name: Final disk report
+        if: always()
+        run: |
+          echo "=== FINAL DISK STATUS ==="
+          df -h / | tail -1

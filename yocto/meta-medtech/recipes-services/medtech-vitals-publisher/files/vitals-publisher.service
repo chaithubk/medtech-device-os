@@ -1,0 +1,19 @@
+[Unit]
+Description=MedTech Vitals Publisher
+Wants=network-online.target mosquitto.service
+After=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/medtech/vitals-publisher
+ExecStart=/usr/bin/python3 -m src
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vitals-publisher
+EnvironmentFile=/etc/medtech/vitals-publisher.env
+User=root
+
+[Install]
+WantedBy=multi-user.target

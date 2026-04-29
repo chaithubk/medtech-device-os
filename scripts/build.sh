@@ -32,9 +32,29 @@ if [ ! -f "conf/bblayers.conf" ]; then
     echo "Created conf/bblayers.conf from template"
 fi
 
-# Build minimal image
-echo "Building core-image-minimal..."
-bitbake core-image-minimal
+if ! grep -q '^QT_GIT_PROTOCOL = "https"' conf/local.conf; then
+    cat <<'EOF' >> conf/local.conf
+
+# Local-only: keep git:// URL form for bitbake git fetcher, but force
+# transport over HTTPS to avoid blocked git:// traffic.
+QT_GIT_PROTOCOL = "https"
+EOF
+fi
+
+if ! grep -q 'git://code.qt.io/qt/(.*)' conf/local.conf; then
+    cat <<'EOF' >> conf/local.conf
+
+# Local-only: if code.qt.io is blocked or has TLS chain issues, fall back to
+# the official Qt GitHub mirror for qt/* repositories.
+PREMIRRORS:append = " \
+git://code.qt.io/qt/(.*) git://github.com/qt/\1;protocol=https \n \
+"
+EOF
+fi
+
+# Build core-image-medtech
+echo "Building core-image-medtech..."
+bitbake core-image-medtech
 
 echo "✅ Build complete!"
-echo "Image: tmp/deploy/images/qemuarm64/core-image-minimal-qemuarm64.tar.bz2"
+echo "Image: tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4"

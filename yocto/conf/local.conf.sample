@@ -1,36 +1,119 @@
-# MedTech Device OS - Yocto Configuration
+# MedTech Device OS - Stage 1 Build Configuration
 
 MACHINE = "qemuarm64"
 DISTRO = "poky"
 
-# Build parallel settings
-BB_NUMBER_THREADS = "${@oe.utils.cpu_count()}"
-PARALLEL_MAKE = "-j ${@oe.utils.cpu_count()}"
+# Image type (keep only deployable artifact used by CI to reduce disk/time)
+IMAGE_FSTYPES = "ext4"
+
+# Build parallel settings (conservative to reduce disk churn)
+BB_NUMBER_THREADS = "2"
+PARALLEL_MAKE = "-j 2"
 
 # Package formats
-PACKAGE_CLASSES = "package_rpm"
+PACKAGE_CLASSES = "package_ipk"
 
-# Image output formats (ext4 required for CI artifact verification)
-IMAGE_FSTYPES = "ext4 tar.bz2"
-
-# Image features (ssh-server-openssh adds openssh server)
+# Image features
 IMAGE_FEATURES += "ssh-server-openssh"
+EXTRA_IMAGE_FEATURES = ""
+IMAGE_FEATURES:remove = "debug-tweaks dbg-pkgs dev-pkgs tools-debug tools-profile tools-sdk"
 
-# Extra image content (debug-tweaks: allow root login without password)
-EXTRA_IMAGE_FEATURES += "debug-tweaks"
+# Systemd as init manager
+DISTRO_FEATURES:append = " systemd"
+VIRTUAL-RUNTIME_init_manager = "systemd"
+VIRTUAL-RUNTIME_initscripts = ""
 
-# Downloads and cache
+# Qt6 and display support — use OpenGL (EGL/GLES) headless; no Vulkan/Wayland/X11
+DISTRO_FEATURES:append = " opengl pam"
+DISTRO_FEATURES:remove = "wayland x11 vulkan"
+
+# IPv4/IPv6 networking
+DISTRO_FEATURES:append = " ipv4 ipv6"
+
+# Downloads and sstate cache
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
+SSTATE_MIRRORS = ""
 
-# Additional packages
-IMAGE_INSTALL:append = " \
-    python3 \
-    python3-pip \
-    openssh \
-    curl \
-    wget \
-    nano \
-    htop \
-"
+# ============================================================
+# Build optimization — GitHub-hosted runner disk constraints
+# ============================================================
+
+# Keep SDK machine valid for parser-generated nativesdk variants.
+# We do not run populate_sdk in CI, so this does not force SDK artifact generation.
+SDKMACHINE = "x86_64"
+
+# Strip debug symbols from binaries (reduces image size significantly)
+INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
+INHIBIT_PACKAGE_STRIP = "0"
+SKIP_PACKAGE_STRIP = "0"
+
+# Do not generate static development output
+# Yocto expects DISABLE_STATIC to be a configure-fragment string, not a boolean.
+# Using "1" can leak into configure args and create malformed options like
+# --without-sendmail1 / --without-libsigsegv-prefix1 in native recipes.
+DISABLE_STATIC = " --disable-static"
+
+# Do NOT install development packages (-dev, -staticdev) by default
+# This prevents BitBake from building unnecessary development dependencies
+DISTRO_FEATURES:remove = "api-documentation doc"
+
+# Disable locale payload bloat
+IMAGE_LINGUAS = ""
+ENABLE_BINARY_LOCALE_GENERATION = "0"
+
+# Remove task workdirs aggressively to release TMPDIR pressure
+INHERIT += "rm_work"
+RM_WORK_EXCLUDE += "core-image-medtech"
+
+# Keep git fetches shallow where supported
+BB_GIT_SHALLOW = "1"
+BB_GIT_SHALLOW_DEPTH = "1"
+
+# Enforce strict checksums — fail immediately on any tarball checksum drift
+# instead of silently re-downloading. This catches GitHub tarball regeneration
+# before it wastes build time.
+BB_STRICT_CHECKSUM = "1"
+
+# ============================================================
+# Build resilience & diagnostics
+# ============================================================
+
+# Abort when disk is critically low so workflow fails early and clearly
+BB_DISKMON_DIRS = "ABORT,${TMPDIR},100M,100K"
+
+# Hash equivalency server — dramatically speeds up incremental CI builds
+# by sharing task signatures across machines
+BB_HASHSERVE = "auto"
+
+# Print failed task output in the terminal with enough context for CI triage
+BBINCLUDELOGS = "yes"
+BBINCLUDELOGS_LINES = "200"
+
+# ============================================================
+# SPDX / SBOM generation (Yocto native — kirkstone+)
+# ============================================================
+# create-spdx is shipped with Poky; no extra layer needed.
+# It auto-generates an SPDX 2.2 document for every recipe and
+# assembles a complete image-level SPDX JSON during do_rootfs.
+# Output: tmp/deploy/images/qemuarm64/spdx/
+# Standards: ISO/IEC 40110, NTIA Minimum Elements, SPDX 2.2
+INHERIT += "create-spdx"
+
+# Human-readable indented JSON output
+SPDX_PRETTY = "1"
+
+# Compress per-package SPDX archives with gzip
+SPDX_ARCHIVE_COMPRESS = "gz"
+
+# Do NOT include source code references in SPDX (saves disk space during build)
+SPDX_INCLUDE_SOURCES = "0"
+
+# Output directory (under DEPLOY_DIR_IMAGE)
+SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
+
+
+# Use a broadly reachable HTTPS endpoint for Yocto connectivity sanity checks
+# across both local and CI environments.
+CONNECTIVITY_CHECK_URIS = "https://github.com/"
 

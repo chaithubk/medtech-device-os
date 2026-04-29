@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y \
     gawk \
     wget \
     git \
+    file \
+    lz4 \
     diffstat \
     unzip \
     texinfo \
@@ -28,6 +30,16 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-pexpect \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    gettext \
+    patch \
+    perl \
+    bison \
+    flex \
+    gperf \
     xz-utils \
     debianutils \
     iputils-ping \
@@ -66,6 +78,9 @@ RUN pip3 install \
 
 # Create workspace
 WORKDIR /workspace
+
+# Create an unprivileged user for BitBake (Yocto refuses root builds).
+RUN useradd -m -s /bin/bash builder
 
 # Set git safe directory (for dev container)
 RUN git config --global --add safe.directory /workspace
