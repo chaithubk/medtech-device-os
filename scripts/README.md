@@ -93,6 +93,18 @@ Post-processes SBOM for validation.
 ### `verify-image.sh`
 Sanity checks on the final rootfs image.
 
+### `audit-image-deps.sh`
+Dependency-closure audit for an image target (dry-run, no full compile).
+- Generates `pn-buildlist` and `task-depends.dot`
+- Captures resolved `IMAGE_INSTALL`, `CORE_IMAGE_BASE_INSTALL`, and feature variables
+- Flags common bloat candidates (packagegroups, ptest/test stacks)
+- Extracts direct service `RDEPENDS` from `meta-medtech/recipes-services`
+
+**Usage:**
+```bash
+su - builder -c 'cd /workspace && bash scripts/audit-image-deps.sh core-image-medtech'
+```
+
 ---
 
 ## Recommended Workflow
