@@ -402,6 +402,29 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
+      - name: Build and push QEMU image to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "=== Building and pushing QEMU image to GHCR ==="
+          
+          # Set image tag based on branch/event
+          IMAGE_TAG="${{ github.sha }}"
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            IMAGE_TAG="latest"
+          fi
+          
+          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image:${IMAGE_TAG}"
+          echo "Building: $FULL_IMAGE_REF"
+          
+          # Build using Dockerfile.qemu-artifacts
+          docker build -f Dockerfile.qemu-artifacts -t "$FULL_IMAGE_REF" .
+          
+          # Authenticate to GHCR and push
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker push "$FULL_IMAGE_REF"
+          
+          echo "Successfully pushed: $FULL_IMAGE_REF"
+
       - name: Final disk report
         if: always()
         run: |

@@ -2,6 +2,94 @@
 
 Embedded Linux operating system for medical IoT devices using Yocto Project (kirkstone).
 
+## Table of Contents
+
+- [Start Here](#start-here)
+- [Deployment](#deployment)
+- [Stage 1: QEMU Emulation](#stage-1-qemu-emulation)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Sanity Checks Inside QEMU](#sanity-checks-inside-qemu)
+- [Generate SBOM](#generate-sbom)
+- [SSH Access After Boot (both paths)](#ssh-access-after-boot-both-paths)
+- [CI/CD](#cicd)
+- [Which Files Affect CI vs Local Builds?](#which-files-affect-ci-vs-local-builds)
+- [Local Reproducible Build Notes](#local-reproducible-build-notes)
+- [Disk Space Optimization](#disk-space-optimization)
+- [Layer Structure](#layer-structure)
+- [Documentation Index](#documentation-index)
+
+## Start Here
+
+If you are new to this repository, follow this order:
+
+1. Run the build steps in [Quick Start](#quick-start).
+2. Boot and validate behavior with [Sanity Checks Inside QEMU](#sanity-checks-inside-qemu).
+3. Review CI behavior in [CI/CD](#cicd).
+4. Use the troubleshooting docs in [Documentation Index](#documentation-index).
+
+## Deployment
+
+This project supports two deployment/testing paths for QEMU images.
+
+### Path A: Run a Locally Built Image (inside dev container)
+
+1. Build image: `bitbake core-image-medtech`
+2. Boot image: `bash scripts/run-qemu.sh`
+3. Verify services: use [Sanity Checks Inside QEMU](#sanity-checks-inside-qemu)
+
+Boot command details (terminal mode):
+
+```bash
+bash scripts/run-qemu.sh
+```
+
+### Path B: Run a GHCR Image on Ubuntu Host (outside container)
+
+1. Prepare host once:
+
+```bash
+bash scripts/setup-host-qemu-prereqs.sh
+```
+
+2. Run GHCR image (kernel + rootfs auto-detected from `/artifacts/`):
+
+```bash
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest
+```
+
+3. Connect with SSH using [SSH Access After Boot (both paths)](#ssh-access-after-boot-both-paths).
+
+### GHCR Unauthorized Error (quick fix)
+
+If pull fails with `unauthorized`, authenticate Docker to GHCR:
+
+```bash
+export GHCR_PAT=<token-with-read:packages>
+echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
+```
+
+If the package belongs to an organization, ensure the token is SSO-authorized for that org.
+
+### Missing Kernel in Older GHCR Images
+
+If you have an older GHCR image that only contains `.ext4` (no kernel), provide kernel path explicitly:
+
+```bash
+bash scripts/run-ghcr-qemu.sh \
+  --image ghcr.io/<owner>/<repo>/qemu-image:old-tag \
+  --kernel /path/to/Image-qemuarm64.bin
+```
+
+New builds (after this CI fix) include kernel + rootfs + dtb in `/artifacts/`, so you won't need `--kernel`.
+
+### SSH Access After Boot (both paths)
+
+```bash
+ssh -p 2222 root@localhost
+```
+
 ## Stage 1: QEMU Emulation
 
 ### Features
@@ -70,12 +158,7 @@ su - builder -c 'cd /workspace && source yocto/poky/oe-init-build-env yocto/buil
 
 #### Boot in QEMU
 
-```bash
-# From the yocto/build directory
-runqemu qemuarm64 core-image-medtech nographic
-
-# Login: root  (no password)
-```
+Use the canonical deployment instructions in [Deployment](#deployment).
 
 ---
 
@@ -138,12 +221,6 @@ bash scripts/generate-sbom.sh
 # Output: sbom/sbom.json  (CycloneDX 1.4 format)
 ```
 
-### SSH into QEMU
-
-```bash
-ssh -p 2222 root@localhost
-```
-
 ### CI/CD
 
 GitHub Actions (`.github/workflows/device-build-smart.yml`) automatically:
@@ -152,7 +229,17 @@ GitHub Actions (`.github/workflows/device-build-smart.yml`) automatically:
 3. Runs the medtech-specific manifest and Python runtime checks on `main` builds
 4. Uploads the built `.ext4` image as an artifact
 5. Uploads the SPDX SBOM for `core-image-medtech` builds
-6. Pushes a tagged Docker image to GHCR (`ghcr.io/<owner>/medtech-device-os/qemu-image`)
+6. **Packages kernel, rootfs, and DTB into a Docker image and pushes to GHCR** (`ghcr.io/<owner>/medtech-device-os/qemu-image:latest` for main branch)
+
+#### GHCR Image Contents
+
+The Docker image pushed to GHCR contains:
+- Yocto kernel image (`Image` or `Image-qemuarm64.bin`)
+- Rootfs image (`*.ext4`)
+- Device tree blob (`*.dtb`, if available)
+- SPDX SBOM files (for `core-image-medtech` only)
+
+All artifacts are located in `/artifacts/` inside the container for easy extraction.
 
 #### Build Artifacts, Archives, and Retention
 
@@ -221,7 +308,7 @@ The build is optimized for GitHub Actions runners (limited to ~14 GB disk space)
 - **No SPDX sources**: `SPDX_INCLUDE_SOURCES = "0"` (~500 MB-1 GB saved)
 - **CI pre-build cleanup**: Removes dotnet, android, ghc, CodeQL (~12-15 GB freed)
 
-See [`DISK_OPTIMIZATION.md`](/docs/DISK_OPTIMIZATION.md) for detailed strategy.
+See [docs/DISK_OPTIMIZATION.md](docs/DISK_OPTIMIZATION.md) for detailed strategy.
 
 ### Layer Structure
 
@@ -240,3 +327,15 @@ yocto/meta-medtech/
 │   └── tensorflow-lite/tensorflow-lite_2.14.0.bb
 └── recipes-image/core-image-medtech/core-image-medtech.bb
 ```
+
+## Documentation Index
+
+- [docs/README.md](docs/README.md) - Documentation landing page.
+- [docs/yocto-ci-failure-detection.md](docs/yocto-ci-failure-detection.md) - CI-first failure triage runbook.
+- [docs/yocto-fetch-and-mirror-notes.md](docs/yocto-fetch-and-mirror-notes.md) - Fetch failure and mirror guidance.
+- [docs/yocto-generated-config-notes.md](docs/yocto-generated-config-notes.md) - Generated config behavior and drift notes.
+- [docs/yocto-local-recovery-notes.md](docs/yocto-local-recovery-notes.md) - Local recovery steps.
+- [docs/yocto-single-recipe-build-notes.md](docs/yocto-single-recipe-build-notes.md) - Fast local iteration with single-recipe builds.
+- [docs/yocto-build-pause-resume-notes.md](docs/yocto-build-pause-resume-notes.md) - Pausing and resuming long builds.
+- [docs/DISK_OPTIMIZATION.md](docs/DISK_OPTIMIZATION.md) - Disk pressure mitigation strategy.
+- [docs/SBOM_STRATEGY.md](docs/SBOM_STRATEGY.md) - SBOM generation and compliance strategy.

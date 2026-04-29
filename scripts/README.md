@@ -57,6 +57,46 @@ bash scripts/run-qemu.sh              # nographic (terminal mode)
 bash scripts/run-qemu.sh --graphics   # with GUI
 ```
 
+### `run-ghcr-qemu.sh`
+**Pull a GHCR image, extract Yocto artifacts, and boot it in QEMU on a host Ubuntu machine.**
+- Pulls an image like `ghcr.io/<owner>/<repo>/qemu-image:<tag>`
+- Tries `/artifacts` first, then auto-discovers `.ext4`, `Image*`, and `.dtb` paths in the container
+- Boots `qemu-system-aarch64` with SSH forwarded to `localhost:2222`
+- Suitable for: running CI-published image artifacts outside the dev container
+
+**Usage:**
+```bash
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:main --graphics
+```
+
+If the GHCR image contains only `.ext4` and no kernel artifact, provide kernel path explicitly:
+```bash
+bash scripts/run-ghcr-qemu.sh \
+	--image ghcr.io/<owner>/<repo>/qemu-image:latest \
+	--kernel /path/to/Image-qemuarm64.bin
+```
+
+**If pull returns `unauthorized`:**
+```bash
+export GHCR_PAT=<token-with-read:packages>
+echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
+```
+
+If your package is under an organization, ensure the token is SSO-authorized for that org.
+
+**Helpful options:**
+```bash
+# Just resolve artifacts and print the QEMU command
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest --dry-run
+
+# Keep extracted artifacts after QEMU exits
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest --keep
+
+# Override rootfs/dtb manually if needed
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest --rootfs /path/to/rootfs.ext4 --dtb /path/to/qemuarm64.dtb
+```
+
 ### `test-qemu.sh`
 Automated test script that SSH's into the running QEMU image and verifies services.
 - Waits for SSH daemon to start (up to 60 seconds)
@@ -71,6 +111,27 @@ bash scripts/test-qemu.sh
 ---
 
 ## Setup & Validation Scripts
+
+### `setup-host-qemu-prereqs.sh`
+**Prepare a plain Ubuntu host to run GHCR-published QEMU artifacts.**
+- Installs Docker and QEMU host packages
+- Enables/starts Docker service
+- Verifies Docker daemon and `qemu-system-aarch64`
+- Suitable for: first-time setup on laptops/VMs outside the dev container
+
+**Usage:**
+```bash
+bash scripts/setup-host-qemu-prereqs.sh
+```
+
+**Optional flags:**
+```bash
+# Only validate existing installation
+bash scripts/setup-host-qemu-prereqs.sh --no-install
+
+# Add current user to docker group (re-login required)
+bash scripts/setup-host-qemu-prereqs.sh --add-docker-group
+```
 
 ### `setup-devenv.sh`
 Initializes the dev environment (host tools, Yocto layers).
@@ -113,6 +174,10 @@ su - builder -c 'cd /workspace && bash scripts/audit-image-deps.sh core-image-me
 1. **Build:** `bash scripts/build.sh`
 2. **Test:** `bash scripts/run-qemu.sh`
 3. **Iterate:** Edit recipe → `bash scripts/build.sh` → test
+
+### Run CI Image On Ubuntu Host
+1. **Prepare host:** `bash scripts/setup-host-qemu-prereqs.sh`
+2. **Run GHCR image:** `bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest`
 
 ### Before CI Push
 1. **Full validation:** `bash scripts/build-robust.sh`
