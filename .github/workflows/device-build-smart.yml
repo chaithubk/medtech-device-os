@@ -10,7 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/qemu-image
-  CI_BUILD_IMAGE: core-image-minimal
+  CI_BUILD_IMAGE: ${{ github.event_name == 'pull_request' && 'core-image-minimal' || 'core-image-medtech' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
