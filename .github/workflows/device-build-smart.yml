@@ -323,49 +323,7 @@ jobs:
       - name: Sanity check Python runtime coverage
         if: env.CI_BUILD_IMAGE == 'core-image-medtech'
         run: |
-          MANIFEST="yocto/build/tmp/deploy/images/qemuarm64/${CI_BUILD_IMAGE}-qemuarm64.manifest"
-          if [ ! -f "$MANIFEST" ]; then
-            echo "Manifest not found: $MANIFEST"
-            exit 1
-          fi
-
-          echo "=== REQUIRED PYTHON RUNTIME PACKAGES ==="
-          for pkg in python3 python3-paho-mqtt; do
-            if grep -Eq "^${pkg}\\b" "$MANIFEST"; then
-              echo "OK: $pkg"
-            else
-              echo "MISSING: $pkg"
-              exit 1
-            fi
-          done
-
-          echo ""
-          echo "=== STDLIB MODULE PROVIDER CHECKS (SANITY) ==="
-          check_any() {
-            module_name="$1"
-            pattern="$2"
-            if grep -Eq "$pattern" "$MANIFEST"; then
-              echo "OK: ${module_name} provider present"
-            else
-              echo "MISSING: ${module_name} provider not found in manifest"
-              exit 1
-            fi
-          }
-
-          check_any "argparse" "^(python3-argparse|python3-core|python3-misc)\\b"
-          check_any "json" "^(python3-json|python3-core|python3-misc)\\b"
-          check_any "logging" "^(python3-logging|python3-core|python3-misc)\\b"
-          check_any "threading" "^(python3-threading|python3-core|python3-misc)\\b"
-          check_any "typing" "^(python3-typing|python3-core|python3-misc)\\b"
-
-          echo ""
-          echo "=== REGRESSION GUARD ==="
-          if grep -Eq "^python3-modules\\b" "$MANIFEST"; then
-            echo "Unexpected python3-modules found in image manifest"
-            exit 1
-          fi
-
-          echo "Python runtime sanity checks passed"
+          bash scripts/verify-image.sh python-sanity
 
       - name: Process SPDX SBOM
         if: env.CI_BUILD_IMAGE == 'core-image-medtech'
