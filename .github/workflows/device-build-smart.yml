@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -358,7 +359,7 @@ jobs:
 
       # === Build and push QEMU image to GHCR for PRs (core-image-minimal) ===
       - name: Build and push qemu-image-minimal to GHCR (PR)
-        if: github.event_name == 'pull_request' && env.CI_BUILD_IMAGE == 'core-image-minimal'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && env.CI_BUILD_IMAGE == 'core-image-minimal'
         run: |
           echo "=== Building and pushing qemu-image-minimal to GHCR (PR) ==="
           IMAGE_TAG="pr-${{ github.event.pull_request.number || github.sha }}"
