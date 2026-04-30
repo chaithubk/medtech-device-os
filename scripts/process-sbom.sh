@@ -18,9 +18,9 @@ echo "=== Processing Yocto SPDX SBOM ==="
 echo ""
 
 if [ ! -d "$SPDX_DIR" ]; then
-    echo "ERROR: SPDX directory not found: $SPDX_DIR"
-    echo "Run 'bitbake core-image-medtech' first."
-    exit 1
+    echo "WARNING: SPDX directory not found: $SPDX_DIR"
+    echo "SPDX SBOM will not be included in artifacts."
+    exit 0
 fi
 
 mkdir -p "$OUTPUT_DIR"

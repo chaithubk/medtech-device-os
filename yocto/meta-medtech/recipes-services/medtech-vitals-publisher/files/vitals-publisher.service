@@ -1,7 +1,8 @@
+
 [Unit]
 Description=MedTech Vitals Publisher
-Wants=network-online.target mosquitto.service
-After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service medtech-edge-analytics.service
+After=network-online.target mosquitto.service medtech-edge-analytics.service
 
 [Service]
 Type=simple

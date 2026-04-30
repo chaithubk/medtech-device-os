@@ -335,18 +335,19 @@ jobs:
         run: |
           mkdir -p artifacts
           DEPLOY="yocto/build/tmp/deploy/images/qemuarm64"
-
-          cp "$DEPLOY/${CI_BUILD_IMAGE}-qemuarm64.ext4" artifacts/
+          IMAGE="$DEPLOY/${CI_BUILD_IMAGE}-qemuarm64.ext4"
+          if [ ! -f "$IMAGE" ]; then
+            echo "ERROR: Image not found: $IMAGE"
+            exit 1
+          fi
+          cp "$IMAGE" artifacts/
           cp "$DEPLOY/Image" artifacts/ 2>/dev/null || true
           cp "$DEPLOY/qemuarm64.dtb" artifacts/ 2>/dev/null || true
-
           cp sbom/*.spdx.json artifacts/ 2>/dev/null || true
           cp sbom/*.spdx.rdf artifacts/ 2>/dev/null || true
           cp sbom/*.json artifacts/ 2>/dev/null || true
           cp sbom/*.rdf artifacts/ 2>/dev/null || true
-
           rm -rf yocto
-
           echo "=== ARTIFACTS READY ==="
           ls -lh artifacts/
           du -sh artifacts/
@@ -360,27 +361,31 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Build and push QEMU image to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+      # === Build and push QEMU image to GHCR for PRs (core-image-minimal) ===
+      - name: Build and push qemu-image-minimal to GHCR (PR)
+        if: github.event_name == 'pull_request' && env.CI_BUILD_IMAGE == 'core-image-minimal'
         run: |
-          echo "=== Building and pushing QEMU image to GHCR ==="
-          
-          # Set image tag based on branch/event
-          IMAGE_TAG="${{ github.sha }}"
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            IMAGE_TAG="latest"
-          fi
-          
-          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image:${IMAGE_TAG}"
+          echo "=== Building and pushing qemu-image-minimal to GHCR (PR) ==="
+          IMAGE_TAG="pr-${{ github.event.pull_request.number || github.sha }}"
+          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-minimal:${IMAGE_TAG}"
           echo "Building: $FULL_IMAGE_REF"
-          
-          # Build using Dockerfile.qemu-artifacts
           docker build -f Dockerfile.qemu-artifacts -t "$FULL_IMAGE_REF" .
-          
-          # Authenticate to GHCR and push
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
           docker push "$FULL_IMAGE_REF"
-          
+          echo "Successfully pushed: $FULL_IMAGE_REF"
+
+      # === Build and push QEMU image to GHCR for main (core-image-medtech) ===
+      - name: Build and push qemu-image-medtech to GHCR (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CI_BUILD_IMAGE == 'core-image-medtech'
+        run: |
+          echo "=== Building and pushing qemu-image-medtech to GHCR (main) ==="
+          IMAGE_TAG="latest"
+          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-medtech:${IMAGE_TAG}"
+          echo "Building: $FULL_IMAGE_REF"
+          docker build -f Dockerfile.qemu-artifacts -t "$FULL_IMAGE_REF" .
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker push "$FULL_IMAGE_REF"
           echo "Successfully pushed: $FULL_IMAGE_REF"
 
       - name: Final disk report

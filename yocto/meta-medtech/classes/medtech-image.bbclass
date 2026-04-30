@@ -40,10 +40,16 @@ MEDTECH_QT6_PKGS = " \
     freetype \
 "
 
+# ML runtime only
+MEDTECH_ML_PKGS = " \
+    tensorflow-lite \
+"
+
 # MedTech services
 MEDTECH_SERVICES = " \
     medtech-system \
     medtech-vitals-publisher \
+    medtech-edge-analytics \
     medtech-clinician-ui \
 "
 
@@ -53,6 +59,7 @@ IMAGE_INSTALL:append = " \
     ${MEDTECH_MQTT_PKGS} \
     ${MEDTECH_QT6_PKGS} \
     ${MEDTECH_SERVICES} \
+    ${MEDTECH_ML_PKGS} \
 "
 
 IMAGE_FEATURES = "ssh-server-openssh"

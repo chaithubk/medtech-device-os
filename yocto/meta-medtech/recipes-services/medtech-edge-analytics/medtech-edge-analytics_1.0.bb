@@ -1,6 +1,4 @@
-DESCRIPTION = "MedTech Edge Analytics - Sepsis detection with TensorFlow Lite"
-SUMMARY = "MQTT-driven ML inference service for sepsis detection"
-HOMEPAGE = "https://github.com/chaithubk/medtech-edge-analytics"
+DESCRIPTION = "MedTech Edge Analytics - Sepsis detection service"
 LICENSE = "CLOSED"
 PV = "1.0"
 
@@ -15,55 +13,41 @@ SRC_URI = " \
 
 S = "${WORKDIR}/git"
 
+# Now satisfied by the RPROVIDES in the tensorflow-lite recipe
 RDEPENDS:${PN} = " \
-    python3 \
+    python3-core \
     python3-numpy \
     python3-paho-mqtt \
-    tensorflow-lite \
+    python3-tensorflow-lite \
     medtech-system \
 "
 
-SYSTEMD_SERVICE:${PN} = "medtech-edge-analytics.service"
+SYSTEMD_SERVICE:${PN} = "edge-analytics.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
-    # Install application, excluding VCS metadata and non-runtime artifacts
+    # Install Python Application
     install -d ${D}/opt/medtech/edge-analytics
-    (
-        cd ${S}
-        tar --exclude-vcs \
-            --exclude='__pycache__' \
-            --exclude='*.pyc' \
-            --exclude='.pytest_cache' \
-            -cf - .
-    ) | (
-        cd ${D}/opt/medtech/edge-analytics
-        tar --no-same-owner --no-same-permissions -xf -
-    )
-    chown -R root:root ${D}/opt/medtech/edge-analytics
-
-    # Make all Python files executable (entry points and helpers)
+    cp -r ${S}/* ${D}/opt/medtech/edge-analytics/
+    rm -rf ${D}/opt/medtech/edge-analytics/.git
     find ${D}/opt/medtech/edge-analytics -name "*.py" -exec chmod 0755 {} \;
 
-    # Install TFLite model if present
+    # Install Model (Matches MODEL_PATH in .env)
     install -d ${D}/opt/medtech/models
     if [ -f ${S}/models/sepsis_model.tflite ]; then
-        install -m 0644 ${S}/models/sepsis_model.tflite ${D}/opt/medtech/models/sepsis_model.tflite
+        install -m 0644 ${S}/models/sepsis_model.tflite ${D}/opt/medtech/models/
     fi
 
-    # Install environment configuration
+    # Install Configuration and Systemd Unit
     install -d ${D}${sysconfdir}/medtech
     install -m 0644 ${WORKDIR}/edge-analytics.env ${D}${sysconfdir}/medtech/edge-analytics.env
-
-    # Install systemd service
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/edge-analytics.service ${D}${systemd_system_unitdir}/medtech-edge-analytics.service
-
+    install -m 0644 ${WORKDIR}/edge-analytics.service ${D}${systemd_system_unitdir}/edge-analytics.service
 }
 
 FILES:${PN} = " \
     /opt/medtech/edge-analytics \
     /opt/medtech/models \
     ${sysconfdir}/medtech/edge-analytics.env \
-    ${systemd_system_unitdir}/medtech-edge-analytics.service \
+    ${systemd_system_unitdir}/edge-analytics.service \
 "
