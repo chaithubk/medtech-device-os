@@ -114,12 +114,11 @@ do_install() {
     cp -r ${B}/tflite_runtime/* ${D}${PYTHON_SITEPACKAGES_DIR}/tflite_runtime/
 }
 
-# Define the Python package and provide the string for the analytics recipe
-PACKAGES += "python3-${PN}"
-FILES:python3-${PN} = "${PYTHON_SITEPACKAGES_DIR}/tflite_runtime"
-RDEPENDS:python3-${PN} = "python3-numpy python3-ctypes python3-core"
-RPROVIDES:python3-${PN} = "python3-tensorflow-lite"
-
+# Explicitly set package splitting for target builds
+PACKAGES = "python3-tensorflow-lite ${PN} ${PN}-dev ${PN}-dbg"
+FILES:python3-tensorflow-lite = "${PYTHON_SITEPACKAGES_DIR}/tflite_runtime"
+RDEPENDS:python3-tensorflow-lite = "python3-numpy python3-ctypes python3-core"
+RPROVIDES:python3-tensorflow-lite = "python3-tensorflow-lite"
 FILES:${PN} += "${libdir}/*.so*"
 FILES:${PN}-dev = "${includedir}/tensorflow"
 INSANE_SKIP:${PN} = "dev-so"
