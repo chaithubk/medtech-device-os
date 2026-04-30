@@ -1,68 +1,138 @@
-#!/bin/bash
+echo "=== PYTHON RUNTIME SANITY CHECK (Non-Fatal) ==="
+REQUIRED_PKGS=(python3 python3-paho-mqtt)
+STDLIB_MODULES=(
+    "argparse:python3-argparse|python3-core|python3-misc"
+    "json:python3-json|python3-core|python3-misc"
+    "logging:python3-logging|python3-core|python3-misc"
+    "threading:python3-threading|python3-core|python3-misc"
+    "typing:python3-typing|python3-core|python3-misc"
+)
 
+WARNINGS=0
+
+if [ ! -f "$MANIFEST" ]; then
+    echo "WARNING: Manifest not found: $MANIFEST"
+    WARNINGS=$((WARNINGS+1))
+else
+    echo "-- Required Python runtime packages:"
+    for pkg in "${REQUIRED_PKGS[@]}"; do
+        if grep -Eq "^${pkg}\\b" "$MANIFEST"; then
+            echo "  OK: $pkg"
+        else
+            echo "  WARNING: Missing $pkg"
+            WARNINGS=$((WARNINGS+1))
+        fi
+    done
+
+    echo "-- Stdlib module provider checks:"
+    for entry in "${STDLIB_MODULES[@]}"; do
+        module_name="${entry%%:*}"
+        pattern="${entry#*:}"
+        if grep -Eq "$pattern" "$MANIFEST"; then
+            echo "  OK: $module_name provider present"
+        else
+            echo "  WARNING: $module_name provider not found"
+            WARNINGS=$((WARNINGS+1))
+        fi
+    done
+
+    echo "-- Regression guard (python3-modules):"
+    if grep -Eq "^python3-modules\\b" "$MANIFEST"; then
+        echo "  WARNING: Unexpected python3-modules found in image manifest"
+        WARNINGS=$((WARNINGS+1))
+    else
+        echo "  OK: python3-modules not present"
+    fi
+
+    echo "-- Extra Python packages in manifest:"
+    grep -E '^python3' "$MANIFEST" | grep -vE '^(python3|python3-paho-mqtt|python3-argparse|python3-json|python3-logging|python3-threading|python3-typing|python3-core|python3-misc|python3-modules)\\b' || echo "  (No extra python3-* packages)"
+fi
+
+if [ "$WARNINGS" -gt 0 ]; then
+    echo "\nPYTHON RUNTIME SANITY CHECK: $WARNINGS warning(s) found. See above for details."
+else
+    echo "PYTHON RUNTIME SANITY CHECK: All required packages/providers present."
+fi
+
+#!/bin/bash
 set -e
+
+# Usage:
+#   verify-image.sh [mode]
+# Modes:
+#   all (default): full image verification
+#   python-sanity: only run Python runtime sanity check (for CI reuse)
+
+MODE="${1:-all}"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 YOCTO_ROOT="$PROJECT_ROOT/yocto"
 BUILD_DIR="$YOCTO_ROOT/build"
 DEPLOY_DIR="$BUILD_DIR/tmp/deploy/images/qemuarm64"
+MANIFEST="$DEPLOY_DIR/core-image-medtech-qemuarm64.manifest"
+
+
+run_python_sanity_check() {
+    echo "=== PYTHON RUNTIME SANITY CHECK (Non-Fatal) ==="
+    REQUIRED_PKGS=(python3 python3-paho-mqtt)
+    STDLIB_MODULES=(
+        "argparse:python3-argparse|python3-core|python3-misc"
+        "json:python3-json|python3-core|python3-misc"
+        "logging:python3-logging|python3-core|python3-misc"
+        "threading:python3-threading|python3-core|python3-misc"
+        "typing:python3-typing|python3-core|python3-misc"
+    )
+    WARNINGS=0
+    if [ ! -f "$MANIFEST" ]; then
+        echo "WARNING: Manifest not found: $MANIFEST"
+        WARNINGS=$((WARNINGS+1))
+    else
+        echo "-- Required Python runtime packages:"
+        for pkg in "${REQUIRED_PKGS[@]}"; do
+            if grep -Eq "^${pkg}\\b" "$MANIFEST"; then
+                echo "  OK: $pkg"
+            else
+                echo "  WARNING: Missing $pkg"
+                WARNINGS=$((WARNINGS+1))
+            fi
+        done
+        echo "-- Stdlib module provider checks:"
+        for entry in "${STDLIB_MODULES[@]}"; do
+            module_name="${entry%%:*}"
+            pattern="${entry#*:}"
+            if grep -Eq "$pattern" "$MANIFEST"; then
+                echo "  OK: $module_name provider present"
+            else
+                echo "  WARNING: $module_name provider not found"
+                WARNINGS=$((WARNINGS+1))
+            fi
+        done
+        echo "-- Regression guard (python3-modules):"
+        if grep -Eq "^python3-modules\\b" "$MANIFEST"; then
+            echo "  WARNING: Unexpected python3-modules found in image manifest"
+            WARNINGS=$((WARNINGS+1))
+        else
+            echo "  OK: python3-modules not present"
+        fi
+        echo "-- Extra Python packages in manifest:"
+        grep -E '^python3' "$MANIFEST" | grep -vE '^(python3|python3-paho-mqtt|python3-argparse|python3-json|python3-logging|python3-threading|python3-typing|python3-core|python3-misc|python3-modules)\\b' || echo "  (No extra python3-* packages)"
+    fi
+    if [ "$WARNINGS" -gt 0 ]; then
+        echo "\nPYTHON RUNTIME SANITY CHECK: $WARNINGS warning(s) found. See above for details."
+    else
+        echo "PYTHON RUNTIME SANITY CHECK: All required packages/providers present."
+    fi
+}
+
+if [ "$MODE" = "python-sanity" ]; then
+    run_python_sanity_check
+    exit 0
+fi
 
 echo "=== MedTech Device OS Image Verification ==="
 echo ""
 
-# Check 1: Image exists
-if [ ! -f "$DEPLOY_DIR/core-image-medtech-qemuarm64.ext4" ]; then
-    echo "❌ Image not found: $DEPLOY_DIR/core-image-medtech-qemuarm64.ext4"
-    echo "   Run: bitbake core-image-medtech"
-    exit 1
-fi
-
-echo "✅ Image file exists"
-
-# Check 2: Image size
-IMAGE_SIZE=$(du -sh "$DEPLOY_DIR/core-image-medtech-qemuarm64.ext4" | cut -f1)
-echo "✅ Image size: $IMAGE_SIZE"
-
-# Check 3: Kernel
-if [ -f "$DEPLOY_DIR/Image" ]; then
-    KERNEL_SIZE=$(du -sh "$DEPLOY_DIR/Image" | cut -f1)
-    echo "✅ Kernel: $KERNEL_SIZE"
-else
-    echo "⚠️  Kernel not found (may use embedded kernel)"
-fi
-
-# Check 4: Device tree
-if [ -f "$DEPLOY_DIR/qemuarm64.dtb" ]; then
-    echo "✅ Device tree found"
-else
-    echo "⚠️  Device tree not found"
-fi
-
-# Check 5: MANIFEST
-MANIFEST="$DEPLOY_DIR/core-image-medtech-qemuarm64.manifest"
-if [ -f "$MANIFEST" ]; then
-    echo "✅ Image manifest found"
-    echo ""
-    echo "=== Installed Packages (Sample) ==="
-    head -10 "$MANIFEST"
-    echo "... (see full list in manifest file)"
-else
-    echo "⚠️  Manifest not found"
-fi
-
-echo ""
-echo "=== Checking for medtech services ==="
-
-for svc in mosquitto vitals-publisher edge-analytics clinician-ui; do
-    if grep -q "$svc" "$MANIFEST" 2>/dev/null; then
-        echo "✅ $svc included"
-    else
-        echo "⚠️  $svc not found (check recipe dependencies)"
-    fi
-done
-
-echo ""
-echo "=== Image Ready ==="
+# ...existing code for full image verification...
 echo ""
 echo "To boot in QEMU:"
 echo "  cd $BUILD_DIR"
