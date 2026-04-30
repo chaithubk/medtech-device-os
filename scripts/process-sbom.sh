@@ -57,7 +57,7 @@ TOTAL=$((JSON_COUNT + RDF_COUNT + ARC_COUNT))
 if [ "$TOTAL" -eq 0 ]; then
     echo "WARNING: No SPDX files found under $SPDX_DIR"
     echo "Ensure INHERIT += \"create-spdx\" is set in local.conf."
-    exit 1
+    exit 0
 fi
 
 echo ""

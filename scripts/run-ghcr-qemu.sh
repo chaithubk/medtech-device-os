@@ -8,9 +8,14 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image[:tag] [options]
+  bash scripts/run-ghcr-qemu.sh --artifacts-dir ./artifacts [options]
+  bash scripts/run-ghcr-qemu.sh --bundle ./artifacts/core-image-medtech-qemuarm64-bundle.tar.gz [options]
 
 Options:
-  --image <ref>       Required. Container image reference.
+  --image <ref>       Container image reference.
+  --artifacts-dir <path>
+                      Local artifacts directory to inspect instead of pulling an OCI image.
+  --bundle <path>     Local bundle archive to extract instead of pulling an OCI image.
   --workdir <path>    Extraction/work directory (default: ./ghcr-qemu-run)
   --kernel <path>     Optional. Host path to kernel image (overrides auto-detect)
   --rootfs <path>     Optional. Host path to rootfs ext4 (overrides auto-detect)
@@ -43,6 +48,8 @@ require_cmd() {
 }
 
 IMAGE_REF=""
+ARTIFACTS_SOURCE_DIR=""
+BUNDLE_OVERRIDE=""
 WORKDIR="./ghcr-qemu-run"
 GRAPHICS=0
 MEMORY_MB=256
@@ -57,6 +64,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --image)
       IMAGE_REF="${2:-}"
+      shift 2
+      ;;
+    --artifacts-dir)
+      ARTIFACTS_SOURCE_DIR="${2:-}"
+      shift 2
+      ;;
+    --bundle)
+      BUNDLE_OVERRIDE="${2:-}"
       shift 2
       ;;
     --workdir)
@@ -107,71 +122,83 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$IMAGE_REF" ]]; then
-  echo "Error: --image is required." >&2
+if [[ -z "$IMAGE_REF" && -z "$ARTIFACTS_SOURCE_DIR" && -z "$BUNDLE_OVERRIDE" ]]; then
+  echo "Error: one of --image, --artifacts-dir, or --bundle is required." >&2
   usage
   exit 2
 fi
 
-require_cmd docker
 require_cmd qemu-system-aarch64
-
-echo "Pulling container image: $IMAGE_REF"
-if ! PULL_OUTPUT="$(docker pull "$IMAGE_REF" 2>&1)"; then
-  echo "$PULL_OUTPUT" >&2
-  if grep -qiE "unauthorized|denied|authentication required" <<<"$PULL_OUTPUT"; then
-    echo "" >&2
-    echo "GHCR authentication failed for: $IMAGE_REF" >&2
-    echo "If this package is private, login first:" >&2
-    echo "  export GHCR_PAT=<token-with-read:packages>" >&2
-    echo "  echo \"\$GHCR_PAT\" | docker login ghcr.io -u <github-username> --password-stdin" >&2
-    echo "" >&2
-    echo "If you use org SSO, make sure the token is authorized for that org." >&2
-  fi
-  exit 1
+if [[ -n "$IMAGE_REF" ]]; then
+  require_cmd docker
 fi
 
 mkdir -p "$WORKDIR"
 WORKDIR_ABS="$(cd "$WORKDIR" && pwd)"
 EXTRACT_DIR="$WORKDIR_ABS/extracted"
 ARTIFACTS_DIR="$WORKDIR_ABS/artifacts"
-mkdir -p "$EXTRACT_DIR" "$ARTIFACTS_DIR"
+UNPACK_DIR="$WORKDIR_ABS/unpacked"
+mkdir -p "$EXTRACT_DIR" "$ARTIFACTS_DIR" "$UNPACK_DIR"
 
-CID="$(docker create "$IMAGE_REF")"
+CID=""
 cleanup() {
-  docker rm "$CID" >/dev/null 2>&1 || true
+  if [[ -n "$CID" ]]; then
+    docker rm "$CID" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
-echo "Attempting to copy /artifacts from image"
-if docker cp "$CID":/artifacts/. "$ARTIFACTS_DIR" 2>/dev/null; then
-  echo "Copied /artifacts contents to: $ARTIFACTS_DIR"
+if [[ -n "$ARTIFACTS_SOURCE_DIR" ]]; then
+  echo "Using local artifacts directory: $ARTIFACTS_SOURCE_DIR"
+  cp -R "$ARTIFACTS_SOURCE_DIR"/. "$ARTIFACTS_DIR"/
+elif [[ -n "$BUNDLE_OVERRIDE" ]]; then
+  echo "Using local bundle archive: $BUNDLE_OVERRIDE"
+  cp "$BUNDLE_OVERRIDE" "$ARTIFACTS_DIR"/
 else
-  echo "No /artifacts directory found in image (this can be normal)."
+  echo "Pulling container image: $IMAGE_REF"
+  if ! PULL_OUTPUT="$(docker pull "$IMAGE_REF" 2>&1)"; then
+    echo "$PULL_OUTPUT" >&2
+    if grep -qiE "unauthorized|denied|authentication required" <<<"$PULL_OUTPUT"; then
+      echo "" >&2
+      echo "GHCR authentication failed for: $IMAGE_REF" >&2
+      echo "If this package is private, login first:" >&2
+      echo "  export GHCR_PAT=<token-with-read:packages>" >&2
+      echo "  echo \"\$GHCR_PAT\" | docker login ghcr.io -u <github-username> --password-stdin" >&2
+      echo "" >&2
+      echo "If you use org SSO, make sure the token is authorized for that org." >&2
+    fi
+    exit 1
+  fi
+
+  CID="$(docker create "$IMAGE_REF")"
+
+  echo "Attempting to copy /artifacts from image"
+  if docker cp "$CID":/artifacts/. "$ARTIFACTS_DIR" 2>/dev/null; then
+    echo "Copied /artifacts contents to: $ARTIFACTS_DIR"
+  else
+    echo "No /artifacts directory found in image (this can be normal)."
+  fi
 fi
 
-echo "Discovering candidate kernel/rootfs/dtb files inside image"
-mapfile -t CANDIDATE_PATHS < <(
-  docker run --rm --entrypoint /bin/sh "$IMAGE_REF" -lc \
-    'find / \( -name "*.ext4" -o -name "Image*" -o -name "*.dtb" -o -name "*qemuarm64*.bin" -o -name "vmlinuz*" -o -name "zImage*" \) 2>/dev/null | sort -u'
-)
-
-if [[ ${#CANDIDATE_PATHS[@]} -eq 0 ]]; then
-  echo "No candidate artifacts found inside container."
-  echo "Expected at least one .ext4 and one kernel image (Image*)."
-  exit 1
+mapfile -t BUNDLE_ARCHIVES < <(find "$ARTIFACTS_DIR" -maxdepth 1 -type f -name '*.tar.gz' | sort)
+if [[ ${#BUNDLE_ARCHIVES[@]} -gt 0 ]]; then
+  echo "Unpacking bundle archives from /artifacts"
+  for bundle in "${BUNDLE_ARCHIVES[@]}"; do
+    tar -xzf "$bundle" -C "$UNPACK_DIR"
+  done
 fi
 
-echo "Copying discovered candidates from image"
-for p in "${CANDIDATE_PATHS[@]}"; do
-  rel="${p#/}"
-  dst="$EXTRACT_DIR/$rel"
-  mkdir -p "$(dirname "$dst")"
-  docker cp "$CID":"$p" "$dst" 2>/dev/null || true
-done
+SEARCH_ROOTS=("$UNPACK_DIR" "$ARTIFACTS_DIR")
+
+candidate_count="$(find "${SEARCH_ROOTS[@]}" -type f \( -name "*.ext4" -o -name "Image*" -o -name "*.dtb" \) 2>/dev/null | wc -l | tr -d ' ')"
+if [[ "$candidate_count" == "0" && -n "$CID" ]]; then
+  echo "No artifacts found under /artifacts; exporting container filesystem as fallback"
+  docker export "$CID" | tar -xf - -C "$EXTRACT_DIR"
+  SEARCH_ROOTS=("$UNPACK_DIR" "$ARTIFACTS_DIR" "$EXTRACT_DIR")
+fi
 
 echo "Extracted artifacts:"
-find "$EXTRACT_DIR" -type f \( -name "*.ext4" -o -name "Image*" -o -name "Image" -o -name "*.dtb" \) -exec ls -lh {} \; 2>/dev/null || true
+find "${SEARCH_ROOTS[@]}" -type f \( -name "*.ext4" -o -name "Image*" -o -name "Image" -o -name "*.dtb" \) -exec ls -lh {} \; 2>/dev/null || true
 
 pick_first() {
   local pattern="$1"
@@ -183,8 +210,6 @@ pick_first() {
     printf '%s\n' "$found"
   fi
 }
-
-SEARCH_ROOTS=("$ARTIFACTS_DIR" "$EXTRACT_DIR")
 
 KERNEL="$KERNEL_OVERRIDE"
 ROOTFS="$ROOTFS_OVERRIDE"
@@ -247,10 +272,13 @@ if [[ -z "$KERNEL" || -z "$ROOTFS" ]]; then
   echo ""
   echo "This usually means the container image only includes rootfs (.ext4) and not kernel artifacts."
   echo "You can provide a kernel manually:"
-  echo "  bash scripts/run-ghcr-qemu.sh --image $IMAGE_REF --kernel /path/to/Image-qemuarm64.bin"
+  if [[ -n "$IMAGE_REF" ]]; then
+    echo "  bash scripts/run-ghcr-qemu.sh --image $IMAGE_REF --kernel /path/to/Image-qemuarm64.bin"
+  else
+    echo "  bash scripts/run-ghcr-qemu.sh --bundle /path/to/bundle.tar.gz --kernel /path/to/Image-qemuarm64.bin"
+  fi
   echo ""
-  echo "To inspect candidate files in the image:"
-  echo "  docker run --rm --entrypoint /bin/sh $IMAGE_REF -lc 'find / \( -name "*.ext4" -o -name "Image*" -o -name "*.dtb" -o -name "*qemuarm64*.bin" \) 2>/dev/null | sort -u'"
+  echo "Inspect the extracted workdir for candidates: $WORKDIR_ABS"
   exit 1
 fi
 
