@@ -3,7 +3,7 @@
 # Usage: bash scripts/run-qemu.sh [--graphics]
 #        (default: nographic mode; use --graphics for GUI)
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -13,32 +13,79 @@ DEPLOY_DIR="$BUILD_DIR/tmp/deploy/images/qemuarm64"
 
 echo "=== MedTech Device OS - QEMU Runner ==="
 
+IMAGE_NAME="core-image-medtech"
+GRAPHICS="-nographic"
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --graphics)
+            GRAPHICS="-display gtk"
+            shift
+            ;;
+        --image-name)
+            IMAGE_NAME="${2:-}"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: bash scripts/run-qemu.sh [--graphics] [--image-name <pn>] [--dry-run]"
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            exit 2
+            ;;
+    esac
+done
+
 # Check for required binaries
 if ! command -v qemu-system-aarch64 &> /dev/null; then
     echo "❌ qemu-system-aarch64 not found"
     exit 1
 fi
 
-# Check for built image
-KERNEL="$DEPLOY_DIR/Image-qemuarm64.bin"
-ROOTFS="$DEPLOY_DIR/core-image-medtech-qemuarm64.ext4"
+pick_latest() {
+    local pattern="$1"
 
-if [ ! -f "$KERNEL" ]; then
+    find -L "$DEPLOY_DIR" -maxdepth 1 \( -type f -o -type l \) -name "$pattern" -printf '%T@ %p\n' 2>/dev/null \
+        | sort -nr \
+        | head -n 1 \
+        | cut -d' ' -f2-
+}
+
+KERNEL="$DEPLOY_DIR/Image-qemuarm64.bin"
+if [[ ! -e "$KERNEL" ]]; then
+    KERNEL="$(pick_latest 'Image*qemuarm64*.bin')"
+fi
+if [[ -z "$KERNEL" ]]; then
+    KERNEL="$(pick_latest 'Image')"
+fi
+if [[ -z "$KERNEL" ]]; then
+    KERNEL="$(pick_latest 'Image*')"
+fi
+
+ROOTFS="$DEPLOY_DIR/${IMAGE_NAME}-qemuarm64.ext4"
+if [[ ! -e "$ROOTFS" ]]; then
+    ROOTFS="$(pick_latest "${IMAGE_NAME}-qemuarm64*.rootfs.ext4")"
+fi
+if [[ -z "$ROOTFS" ]]; then
+    ROOTFS="$(pick_latest "${IMAGE_NAME}-qemuarm64*.ext4")"
+fi
+
+if [ -z "$KERNEL" ] || [ ! -f "$KERNEL" ]; then
     echo "❌ Kernel not found: $KERNEL"
     echo "Build the image first: bash scripts/build-robust.sh"
     exit 1
 fi
 
-if [ ! -f "$ROOTFS" ]; then
+if [ -z "$ROOTFS" ] || [ ! -f "$ROOTFS" ]; then
     echo "❌ Rootfs not found: $ROOTFS"
     echo "Build the image first: bash scripts/build-robust.sh"
     exit 1
-fi
-
-# Parse arguments
-GRAPHICS="-nographic"
-if [[ "$*" == *"--graphics"* ]]; then
-    GRAPHICS="-display gtk"
 fi
 
 echo "Kernel : $KERNEL"
@@ -49,6 +96,11 @@ echo "Login as: root"
 echo "Password: root"
 echo "Quit: Ctrl+A then X (or: shutdown -h now)"
 echo ""
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "Dry run enabled."
+    exit 0
+fi
 
 # Boot QEMU with ARM64 VM configuration
 exec qemu-system-aarch64 \

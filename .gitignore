@@ -32,6 +32,10 @@ tmp/
 temp/
 *.tmp
 
+# Generated packaging outputs
+artifacts/
+ghcr-qemu-run/
+
 # OS
 .DS_Store
 Thumbs.db

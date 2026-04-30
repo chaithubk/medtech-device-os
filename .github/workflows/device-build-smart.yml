@@ -329,28 +329,22 @@ jobs:
         if: env.CI_BUILD_IMAGE == 'core-image-medtech'
         run: |
           echo "=== Collecting SPDX SBOM ==="
-          bash scripts/process-sbom.sh
+          bash scripts/process-sbom.sh || true
 
-      - name: Package artifacts for upload
+      - name: Package GHCR bundle
         run: |
-          mkdir -p artifacts
-          DEPLOY="yocto/build/tmp/deploy/images/qemuarm64"
-          IMAGE="$DEPLOY/${CI_BUILD_IMAGE}-qemuarm64.ext4"
-          if [ ! -f "$IMAGE" ]; then
-            echo "ERROR: Image not found: $IMAGE"
-            exit 1
-          fi
-          cp "$IMAGE" artifacts/
-          cp "$DEPLOY/Image" artifacts/ 2>/dev/null || true
-          cp "$DEPLOY/qemuarm64.dtb" artifacts/ 2>/dev/null || true
-          cp sbom/*.spdx.json artifacts/ 2>/dev/null || true
-          cp sbom/*.spdx.rdf artifacts/ 2>/dev/null || true
-          cp sbom/*.json artifacts/ 2>/dev/null || true
-          cp sbom/*.rdf artifacts/ 2>/dev/null || true
-          rm -rf yocto
+          bash scripts/package-ghcr-artifacts.sh --image-name "${CI_BUILD_IMAGE}"
+
+      - name: Verify GHCR bundle
+        run: |
+          bash scripts/verify-ghcr-package.sh --image-name "${CI_BUILD_IMAGE}"
+
+      - name: Finalize upload directory
+        run: |
           echo "=== ARTIFACTS READY ==="
           ls -lh artifacts/
           du -sh artifacts/
+          rm -rf yocto
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -370,7 +364,13 @@ jobs:
           IMAGE_TAG="pr-${{ github.event.pull_request.number || github.sha }}"
           FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-minimal:${IMAGE_TAG}"
           echo "Building: $FULL_IMAGE_REF"
-          docker build -f Dockerfile.qemu-artifacts -t "$FULL_IMAGE_REF" .
+          docker build \
+            --label org.opencontainers.image.title="medtech qemu image minimal bundle" \
+            --label org.opencontainers.image.description="Yocto QEMU artifact bundle for ${CI_BUILD_IMAGE}" \
+            --label org.opencontainers.image.source="https://github.com/${{ github.repository }}" \
+            --label org.opencontainers.image.revision="${{ github.sha }}" \
+            -f Dockerfile.qemu-artifacts \
+            -t "$FULL_IMAGE_REF" .
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
           docker push "$FULL_IMAGE_REF"
           echo "Successfully pushed: $FULL_IMAGE_REF"
@@ -383,7 +383,13 @@ jobs:
           IMAGE_TAG="latest"
           FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-medtech:${IMAGE_TAG}"
           echo "Building: $FULL_IMAGE_REF"
-          docker build -f Dockerfile.qemu-artifacts -t "$FULL_IMAGE_REF" .
+          docker build \
+            --label org.opencontainers.image.title="medtech qemu image bundle" \
+            --label org.opencontainers.image.description="Yocto QEMU artifact bundle for ${CI_BUILD_IMAGE}" \
+            --label org.opencontainers.image.source="https://github.com/${{ github.repository }}" \
+            --label org.opencontainers.image.revision="${{ github.sha }}" \
+            -f Dockerfile.qemu-artifacts \
+            -t "$FULL_IMAGE_REF" .
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
           docker push "$FULL_IMAGE_REF"
           echo "Successfully pushed: $FULL_IMAGE_REF"

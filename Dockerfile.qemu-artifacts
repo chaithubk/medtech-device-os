@@ -4,11 +4,5 @@
 
 FROM scratch
 
-# Copy kernel, rootfs, and optional DTB to a predictable location
-COPY artifacts/Image* /artifacts/
-COPY artifacts/*.ext4 /artifacts/
-COPY artifacts/*.dtb /artifacts/ 2>/dev/null || true
-
-# Fallback: if artifacts are in a different structure, include the entire qemu build output
-# This ensures kernel, rootfs, and DTB are all available
+# Ship the packaged Yocto bundle and metadata as immutable OCI content.
 COPY artifacts/ /artifacts/

@@ -31,7 +31,62 @@ If you are new to this repository, follow this order:
 
 ## Deployment
 
+
 This project supports two deployment/testing paths for QEMU images.
+
+### Packaging and Verifying GHCR Artifacts
+
+After building your image, you can package the QEMU artifacts for distribution and verify their integrity using the provided scripts:
+
+#### 1. Package the Artifacts
+
+```bash
+bash scripts/package-ghcr-artifacts.sh --image-name core-image-medtech
+```
+
+Expected output:
+
+```
+=== GHCR bundle created ===
+Output directory : /workspace/artifacts
+Archive : /workspace/artifacts/core-image-medtech-qemuarm64-bundle.tar.gz
+Manifest : /workspace/artifacts/core-image-medtech-qemuarm64-manifest.json
+Checksums : /workspace/artifacts/SHA256SUMS
+```
+
+Artifacts produced:
+
+- core-image-medtech-qemuarm64-bundle.tar.gz
+- core-image-medtech-qemuarm64-manifest.json
+- SHA256SUMS
+
+#### 2. Verify the Artifacts
+
+```bash
+bash scripts/verify-ghcr-package.sh --image-name core-image-medtech
+```
+
+Expected output:
+
+```
+core-image-medtech-qemuarm64-bundle.tar.gz: OK
+core-image-medtech-qemuarm64-manifest.json: OK
+=== GHCR bundle verification passed ===
+Archive: /workspace/artifacts/core-image-medtech-qemuarm64-bundle.tar.gz
+Contents summary:
+payload/image/
+payload/image/core-image-medtech-qemuarm64-<timestamp>.rootfs.ext4
+payload/image/Image-qemuarm64.bin
+payload/metadata/
+payload/metadata/core-image-medtech-qemuarm64-<timestamp>.rootfs.manifest
+payload/metadata/core-image-medtech-qemuarm64.testdata.json
+payload/metadata/core-image-medtech-qemuarm64.qemuboot.conf
+payload/metadata/manifest.json
+```
+
+This ensures the archive and manifest are valid and the payload contains the expected files.
+
+---
 
 ### Path A: Run a Locally Built Image (inside dev container)
 

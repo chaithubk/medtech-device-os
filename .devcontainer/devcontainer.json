@@ -41,12 +41,15 @@
   "remoteUser": "root",
   "remoteEnv": {
     "PATH": "/workspace/scripts:${containerEnv:PATH}",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
     "YOCTO_BRANCH": "kirkstone",
     "MACHINE": "qemuarm64",
     "DISTRO": "poky",
     "PYTHONUNBUFFERED": "1"
   },
-  "mounts": [],
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
   "runArgs": [
     "--privileged",
     "--dns=8.8.8.8",
