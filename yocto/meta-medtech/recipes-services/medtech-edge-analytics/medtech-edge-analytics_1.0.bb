@@ -7,7 +7,7 @@ inherit systemd
 SRCREV = "2ff320cc820db7692a2847db9c4ead5ccb7f8cfe"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-edge-analytics.git;protocol=https;branch=main \
-    file://edge-analytics.service \
+    file://medtech-edge-analytics.service \
     file://edge-analytics.env \
 "
 
@@ -22,7 +22,7 @@ RDEPENDS:${PN} = " \
     medtech-system \
 "
 
-SYSTEMD_SERVICE:${PN} = "edge-analytics.service"
+SYSTEMD_SERVICE:${PN} = "medtech-edge-analytics.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
@@ -42,12 +42,12 @@ do_install() {
     install -d ${D}${sysconfdir}/medtech
     install -m 0644 ${WORKDIR}/edge-analytics.env ${D}${sysconfdir}/medtech/edge-analytics.env
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/edge-analytics.service ${D}${systemd_system_unitdir}/edge-analytics.service
+    install -m 0644 ${WORKDIR}/medtech-edge-analytics.service ${D}${systemd_system_unitdir}/medtech-edge-analytics.service
 }
 
 FILES:${PN} = " \
     /opt/medtech/edge-analytics \
     /opt/medtech/models \
     ${sysconfdir}/medtech/edge-analytics.env \
-    ${systemd_system_unitdir}/edge-analytics.service \
+    ${systemd_system_unitdir}/medtech-edge-analytics.service \
 "
