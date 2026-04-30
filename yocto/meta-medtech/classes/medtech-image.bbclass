@@ -40,10 +40,12 @@ MEDTECH_QT6_PKGS = " \
     freetype \
 "
 
+
 # MedTech services
 MEDTECH_SERVICES = " \
     medtech-system \
     medtech-vitals-publisher \
+    medtech-edge-analytics \
     medtech-clinician-ui \
 "
 
