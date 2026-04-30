@@ -4,7 +4,7 @@ PV = "1.0"
 
 inherit systemd
 
-SRCREV = "2ff320cc820db7692a2847db9c4ead5ccb7f8cfe"
+SRCREV = "093564ae8651359c60b66491351c13f2d8819ef0"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-edge-analytics.git;protocol=https;branch=main \
     file://medtech-edge-analytics.service \
@@ -34,7 +34,17 @@ do_install() {
 
     # Install Model (Matches MODEL_PATH in .env)
     install -d ${D}/opt/medtech/models
-    if [ -f ${S}/models/sepsis_model.tflite ]; then
+    if [ -n "${@bb.utils.contains('MACHINE', 'qemuarm64', 'yes', '', d)}" ]; then
+        if [ ! -f ${S}/models/sepsis_model_qemu.tflite ]; then
+            echo "ERROR: sepsis_model_qemu.tflite not found in source repo at ${S}/models/sepsis_model_qemu.tflite" >&2
+            exit 1
+        fi
+        install -m 0644 ${S}/models/sepsis_model_qemu.tflite ${D}/opt/medtech/models/
+    else
+        if [ ! -f ${S}/models/sepsis_model.tflite ]; then
+            echo "ERROR: sepsis_model.tflite not found in source repo at ${S}/models/sepsis_model.tflite" >&2
+            exit 1
+        fi
         install -m 0644 ${S}/models/sepsis_model.tflite ${D}/opt/medtech/models/
     fi
 
