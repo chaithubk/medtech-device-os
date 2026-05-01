@@ -6,9 +6,11 @@ DISTRO = "poky"
 # Image type (keep only deployable artifact used by CI to reduce disk/time)
 IMAGE_FSTYPES = "ext4"
 
-# Build parallel settings (conservative to reduce disk churn)
-BB_NUMBER_THREADS = "2"
-PARALLEL_MAKE = "-j 2"
+# Build parallel settings.
+# GitHub-hosted Linux runners provide 4 vCPUs / 16 GB RAM. 
+# Override locally with BB_NUMBER_THREADS / PARALLEL_MAKE env vars for low-RAM hosts.
+BB_NUMBER_THREADS ?= "4"
+PARALLEL_MAKE     ?= "-j 4"
 
 # Package formats
 PACKAGE_CLASSES = "package_ipk"
@@ -33,7 +35,19 @@ DISTRO_FEATURES:append = " ipv4 ipv6"
 # Downloads and sstate cache
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
-SSTATE_MIRRORS = ""
+
+# Yocto upstream public sstate mirror — massive CI speedup for poky/oe-core/meta-qt6
+# recipes (custom medtech recipes will simply miss and fall through to local build).
+# Override with empty string in air-gapped environments.
+SSTATE_MIRRORS ?= "\
+    file://.* http://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH \n"
+
+# Source pre-mirror — let CI consume already-fetched tarballs first to avoid
+# rate-limit / availability flakes on upstream repos.
+PREMIRRORS ?= "\
+    git://.*/.* http://downloads.yoctoproject.org/mirror/sources/ \n\
+    https?://.*/.* http://downloads.yoctoproject.org/mirror/sources/ \n\
+    ftp://.*/.* http://downloads.yoctoproject.org/mirror/sources/ \n"
 
 # ============================================================
 # Build optimization — GitHub-hosted runner disk constraints
@@ -116,4 +130,35 @@ SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
 # Use a broadly reachable HTTPS endpoint for Yocto connectivity sanity checks
 # across both local and CI environments.
 CONNECTIVITY_CHECK_URIS = "https://github.com/"
+
+# ============================================================
+# Bloat suppression — recipe-level PACKAGECONFIG trims
+# Validated via scripts/audit-image-deps.sh against pn-buildlist.
+# ============================================================
+
+# systemd: drop optional features that drag in microhttpd/gnutls/dbus-broker/etc.
+PACKAGECONFIG:remove:pn-systemd = "audit microhttpd gnutls polkit kmod ldconfig binfmt"
+
+# qtbase: keep gui+opengl-es, drop test/tooling/cups/printsupport bloat.
+PACKAGECONFIG:remove:pn-qtbase = "tests examples sql-sqlite cups printsupport icu accessibility-atspi"
+
+# qtdeclarative: build-time only, keep minimal.
+PACKAGECONFIG:remove:pn-qtdeclarative = "qmltyperegistrar-no-link tools tests examples"
+
+# mosquitto: no websockets / no docs / no bridge tooling we need at runtime.
+PACKAGECONFIG:remove:pn-mosquitto = "websockets manpages dns-srv"
+
+# qemu-system-native: only used for image testing in CI; drop graphics stack.
+# (virglrenderer/mesa/libepoxy native builds disappear.)
+PACKAGECONFIG:remove:pn-qemu-native = "virglrenderer epoxy gtk+ sdl vnc spice usb-redir"
+
+# Distro-wide BAD_RECOMMENDATIONS — also enforced in medtech-image.bbclass,
+# replicated here so non-medtech builds (e.g. core-image-minimal) benefit too.
+BAD_RECOMMENDATIONS:append = " bash-completion bluez5 btrfs-tools kbd ptest-runner mdadm strace socat libical libmicrohttpd gnutls vala python3-pygobject python3-dbus"
+
+# ============================================================
+# Buildhistory — feeds size ranking in audit-image-deps.sh
+# ============================================================
+INHERIT += "buildhistory"
+BUILDHISTORY_COMMIT = "0"
 

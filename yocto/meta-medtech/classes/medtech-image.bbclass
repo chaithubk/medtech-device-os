@@ -8,14 +8,22 @@ CORE_IMAGE_BASE_INSTALL = "packagegroup-core-boot"
 
 # Drop optional platform features not needed by the current service set.
 # This helps reduce transitive dependencies and build time.
-DISTRO_FEATURES:remove = "ptest pulseaudio bluetooth wifi nfc 3g zeroconf gobject-introspection-data"
+# - alsa/usb/pcmcia/nfs are pulled by poky default DISTRO and drag in audio/storage stacks
+#   that this medical-IoT image does not use.
+DISTRO_FEATURES:remove = "ptest pulseaudio bluetooth wifi nfc 3g zeroconf \
+                          gobject-introspection-data alsa pcmcia usbgadget usbhost \
+                          nfs irda x11 wayland vulkan polkit"
+
+# Disable docs/introspection generators globally — heavy native builds we don't ship.
+GI_DATA_ENABLED = "False"
+GTKDOC_ENABLED = "False"
+ENABLE_BINARY_LOCALE_GENERATION = "0"
 
 # Core runtime (small, production-relevant baseline only)
+# Removed: systemd-analyze (diagnostic only), openssh-sftp-server (SFTP not used)
 MEDTECH_CORE_PKGS = " \
     systemd \
-    systemd-analyze \
     openssh \
-    openssh-sftp-server \
     curl \
 "
 
@@ -25,9 +33,9 @@ MEDTECH_PYTHON_PKGS = " \
 "
 
 # MQTT stack
+# mosquitto-clients (mosquitto_pub/sub) is debug-only — services use libmosquitto/paho directly.
 MEDTECH_MQTT_PKGS = " \
     mosquitto \
-    mosquitto-clients \
     python3-paho-mqtt \
 "
 
@@ -36,6 +44,7 @@ MEDTECH_QT6_PKGS = " \
     qtbase \
     qtdeclarative \
     qtmqtt \
+    qtsvg \
     fontconfig \
     freetype \
 "
@@ -65,6 +74,60 @@ IMAGE_INSTALL:append = " \
 IMAGE_FEATURES = "ssh-server-openssh"
 IMAGE_FEATURES:remove = "debug-tweaks dbg-pkgs dev-pkgs tools-debug tools-profile tools-sdk"
 PACKAGE_EXCLUDE_COMPLEMENTARY = ".*-dbg|.*-dev|.*-staticdev"
+
+# ---------------------------------------------------------------------------
+# Bloat suppression — block transitive RRECOMMENDS that creep in from
+# packagegroup-base / systemd / udev defaults but are not used by this image.
+# These are dropped at do_rootfs time, after audit-image-deps.sh confirmed they
+# are pure transitive (not in any service's hard RDEPENDS).
+# ---------------------------------------------------------------------------
+BAD_RECOMMENDATIONS:append = " \
+    bash-completion \
+    bluez5 \
+    btrfs-tools \
+    eudev-hwdb \
+    git \
+    gnutls \
+    kbd \
+    kbd-consolefonts \
+    kbd-keymaps \
+    libical \
+    libmicrohttpd \
+    mdadm \
+    nfs-utils-client \
+    perl \
+    ptest-runner \
+    python3-pygobject \
+    python3-dbus \
+    rsync \
+    socat \
+    strace \
+    systemd-analyze \
+    systemd-bash-completion \
+    vala \
+    wpa-supplicant \
+"
+
+# Belt-and-braces — even if some upstream recipe makes a hard RDEPENDS on these
+# we will not silently install them; the build will fail loudly so we can
+# evaluate. Comment out a line if a build genuinely needs the package.
+PACKAGE_EXCLUDE += "\
+    bluez5 \
+    libical \
+    libmicrohttpd \
+    gnome-desktop-testing \
+    python3-pygobject \
+    python3-dbus \
+    qtwayland \
+    qtwebengine \
+    qtmultimedia \
+    qttools \
+    qtlanguageserver \
+"
+
+# Tighten kernel module recommendations — only ship what hardware needs.
+# qemuarm64 + ext4 + virtio is enough for the CI image.
+KERNEL_MODULE_AUTOLOAD = ""
 
 # QEMU/dev convenience: set a deterministic root password for console and SSH login.
 # NOTE: change this for production images.
