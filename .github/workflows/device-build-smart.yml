@@ -10,7 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/qemu-image
-  CI_BUILD_IMAGE: ${{ github.event_name == 'pull_request' && 'core-image-minimal' || 'core-image-medtech' }}
+  CI_BUILD_IMAGE: core-image-medtech
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -118,7 +118,6 @@ jobs:
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
           echo "# GitHub-hosted runners do not persist build cache between jobs" >> conf/local.conf
-          echo "SSTATE_MIRRORS = \"\"" >> conf/local.conf
           echo "Build directory initialized"
 
       - name: Pre-build disk audit
@@ -351,39 +350,26 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ env.CI_BUILD_IMAGE == 'core-image-minimal' && 'qemu-image-minimal' || 'qemu-image-medtech' }}
+          name: qemu-image-medtech
           path: artifacts/
           retention-days: 30
           if-no-files-found: warn
 
 
-      # === Build and push QEMU image to GHCR for PRs (core-image-minimal) ===
-      - name: Build and push qemu-image-minimal to GHCR (PR)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && env.CI_BUILD_IMAGE == 'core-image-minimal'
+      # === Build and push QEMU image to GHCR ===
+      # PRs: tagged with pr-<number> so they're inspectable without polluting latest.
+      # main: tagged latest.
+      - name: Build and push qemu-image-medtech to GHCR
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.ref == 'refs/heads/main'
         run: |
-          echo "=== Building and pushing qemu-image-minimal to GHCR (PR) ==="
-          IMAGE_TAG="pr-${{ github.event.pull_request.number || github.sha }}"
-          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-minimal:${IMAGE_TAG}"
-          echo "Building: $FULL_IMAGE_REF"
-          docker build \
-            --label org.opencontainers.image.title="medtech qemu image minimal bundle" \
-            --label org.opencontainers.image.description="Yocto QEMU artifact bundle for ${CI_BUILD_IMAGE}" \
-            --label org.opencontainers.image.source="https://github.com/${{ github.repository }}" \
-            --label org.opencontainers.image.revision="${{ github.sha }}" \
-            -f Dockerfile.qemu-artifacts \
-            -t "$FULL_IMAGE_REF" .
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
-          docker push "$FULL_IMAGE_REF"
-          echo "Successfully pushed: $FULL_IMAGE_REF"
-
-      # === Build and push QEMU image to GHCR for main (core-image-medtech) ===
-      - name: Build and push qemu-image-medtech to GHCR (main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CI_BUILD_IMAGE == 'core-image-medtech'
-        run: |
-          echo "=== Building and pushing qemu-image-medtech to GHCR (main) ==="
-          IMAGE_TAG="latest"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            IMAGE_TAG="pr-${{ github.event.pull_request.number }}"
+          else
+            IMAGE_TAG="latest"
+          fi
           FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-medtech:${IMAGE_TAG}"
-          echo "Building: $FULL_IMAGE_REF"
+          echo "=== Building and pushing to GHCR ==="
+          echo "Image: $FULL_IMAGE_REF"
           docker build \
             --label org.opencontainers.image.title="medtech qemu image bundle" \
             --label org.opencontainers.image.description="Yocto QEMU artifact bundle for ${CI_BUILD_IMAGE}" \
