@@ -1,11 +1,12 @@
 [Unit]
 Description=MedTech Edge Analytics
-Wants=network-online.target medtech-vitals-publisher.service
-After=network-online.target medtech-vitals-publisher.service
+Wants=network-online.target
+After=network-online.target
 
 [Service]
+WorkingDirectory=/opt/medtech/edge-analytics
 Type=simple
-ExecStart=/usr/bin/python3 /opt/medtech/edge-analytics/edge_analytics.py
+ExecStart=/usr/bin/python3 -m src
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal

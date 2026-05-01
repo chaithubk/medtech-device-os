@@ -4,10 +4,10 @@ PV = "1.0"
 
 inherit systemd
 
-SRCREV = "2ff320cc820db7692a2847db9c4ead5ccb7f8cfe"
+SRCREV = "093564ae8651359c60b66491351c13f2d8819ef0"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-edge-analytics.git;protocol=https;branch=main \
-    file://edge-analytics.service \
+    file://medtech-edge-analytics.service \
     file://edge-analytics.env \
 "
 
@@ -22,7 +22,7 @@ RDEPENDS:${PN} = " \
     medtech-system \
 "
 
-SYSTEMD_SERVICE:${PN} = "edge-analytics.service"
+SYSTEMD_SERVICE:${PN} = "medtech-edge-analytics.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
@@ -34,7 +34,17 @@ do_install() {
 
     # Install Model (Matches MODEL_PATH in .env)
     install -d ${D}/opt/medtech/models
-    if [ -f ${S}/models/sepsis_model.tflite ]; then
+    if [ -n "${@bb.utils.contains('MACHINE', 'qemuarm64', 'yes', '', d)}" ]; then
+        if [ ! -f ${S}/models/sepsis_model_qemu.tflite ]; then
+            echo "ERROR: sepsis_model_qemu.tflite not found in source repo at ${S}/models/sepsis_model_qemu.tflite" >&2
+            exit 1
+        fi
+        install -m 0644 ${S}/models/sepsis_model_qemu.tflite ${D}/opt/medtech/models/
+    else
+        if [ ! -f ${S}/models/sepsis_model.tflite ]; then
+            echo "ERROR: sepsis_model.tflite not found in source repo at ${S}/models/sepsis_model.tflite" >&2
+            exit 1
+        fi
         install -m 0644 ${S}/models/sepsis_model.tflite ${D}/opt/medtech/models/
     fi
 
@@ -42,12 +52,12 @@ do_install() {
     install -d ${D}${sysconfdir}/medtech
     install -m 0644 ${WORKDIR}/edge-analytics.env ${D}${sysconfdir}/medtech/edge-analytics.env
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/edge-analytics.service ${D}${systemd_system_unitdir}/edge-analytics.service
+    install -m 0644 ${WORKDIR}/medtech-edge-analytics.service ${D}${systemd_system_unitdir}/medtech-edge-analytics.service
 }
 
 FILES:${PN} = " \
     /opt/medtech/edge-analytics \
     /opt/medtech/models \
     ${sysconfdir}/medtech/edge-analytics.env \
-    ${systemd_system_unitdir}/edge-analytics.service \
+    ${systemd_system_unitdir}/medtech-edge-analytics.service \
 "
