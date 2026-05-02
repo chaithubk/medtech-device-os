@@ -8,8 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/qemu-image
   CI_BUILD_IMAGE: core-image-medtech
   GIT_TERMINAL_PROMPT: "0"
 
@@ -20,7 +18,7 @@ jobs:
     # GitHub-hosted runners cap a single job at 360 minutes.
     timeout-minutes: 360
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -356,30 +354,38 @@ jobs:
           if-no-files-found: warn
 
 
-      # === Build and push QEMU image to GHCR ===
-      # PRs: tagged with pr-<number> so they're inspectable without polluting latest.
-      # main: tagged latest.
-      - name: Build and push qemu-image-medtech to GHCR
-        if: github.event.pull_request.head.repo.full_name == github.repository || github.ref == 'refs/heads/main'
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            IMAGE_TAG="pr-${{ github.event.pull_request.number }}"
-          else
-            IMAGE_TAG="latest"
-          fi
-          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-medtech:${IMAGE_TAG}"
-          echo "=== Building and pushing to GHCR ==="
-          echo "Image: $FULL_IMAGE_REF"
-          docker build \
-            --label org.opencontainers.image.title="medtech qemu image bundle" \
-            --label org.opencontainers.image.description="Yocto QEMU artifact bundle for ${CI_BUILD_IMAGE}" \
-            --label org.opencontainers.image.source="https://github.com/${{ github.repository }}" \
-            --label org.opencontainers.image.revision="${{ github.sha }}" \
-            -f Dockerfile.qemu-artifacts \
-            -t "$FULL_IMAGE_REF" .
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
-          docker push "$FULL_IMAGE_REF"
-          echo "Successfully pushed: $FULL_IMAGE_REF"
+      # === Create GitHub Release with QEMU artifacts ===
+      # main branch: tagged "latest" (overwrite previous latest release)
+      # workflow_dispatch: tagged "dev-<sha>" as a pre-release
+      - name: Create GitHub Release with Artifacts
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/core-image-medtech-qemuarm64-bundle.tar.gz
+            artifacts/core-image-medtech-qemuarm64-manifest.json
+            artifacts/SHA256SUMS
+          tag_name: ${{ github.ref == 'refs/heads/main' && 'latest' || format('dev-{0}', github.sha) }}
+          body: |
+            **Build Info**
+            - Commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+            - Image: core-image-medtech-qemuarm64
+
+            **Quick Start** (no Docker required):
+            ```bash
+            bash scripts/download-and-run-qemu.sh --release latest
+            ```
+
+            **Verify Checksums**:
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          draft: false
+          generate_release_notes: true
+          make_latest: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+          allow_overwrite: true
 
       - name: Final disk report
         if: always()

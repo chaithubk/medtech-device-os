@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install and verify host prerequisites for running GHCR Yocto artifacts in QEMU.
+# Install and verify host prerequisites for running Yocto QEMU artifacts.
+# No Docker required - artifacts are distributed via GitHub Releases.
 
 set -euo pipefail
 
@@ -10,16 +11,17 @@ Usage:
 
 Options:
   --no-install         Skip apt install and only run verification checks
-  --add-docker-group   Add current user to docker group (requires re-login)
   -h, --help           Show this help
 
 What this script does:
-  1) Installs Docker + QEMU packages on Ubuntu
-  2) Enables and starts Docker service
-  3) Verifies docker daemon and qemu-system-aarch64 are usable
+  1) Installs QEMU packages on Ubuntu (no Docker required)
+  2) Verifies qemu-system-aarch64 is usable
 
 Recommended next step:
-  bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest
+  bash scripts/download-and-run-qemu.sh --release latest
+
+Optional - GitHub CLI for higher API rate limits when downloading releases:
+  https://cli.github.com/  (not required; curl-based download works without it)
 EOF
 }
 
@@ -31,16 +33,11 @@ require_cmd() {
 }
 
 NO_INSTALL=0
-ADD_DOCKER_GROUP=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-install)
       NO_INSTALL=1
-      shift
-      ;;
-    --add-docker-group)
-      ADD_DOCKER_GROUP=1
       shift
       ;;
     -h|--help)
@@ -78,35 +75,23 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 if [[ "$NO_INSTALL" -eq 0 ]]; then
-  echo "Installing host packages (docker + qemu)"
+  echo "Installing host packages (qemu only - no Docker needed)"
   $SUDO apt-get update -qq
   $SUDO apt-get install -y --no-install-recommends \
     ca-certificates \
-    docker.io \
+    curl \
     qemu-system-arm \
     qemu-efi-aarch64
 fi
 
-require_cmd docker
 require_cmd qemu-system-aarch64
-
-echo "Enabling and starting Docker service"
-$SUDO systemctl enable --now docker
-
-if [[ "$ADD_DOCKER_GROUP" -eq 1 && "$(id -u)" -ne 0 ]]; then
-  echo "Adding user ${USER} to docker group"
-  $SUDO usermod -aG docker "$USER"
-  echo "User added to docker group. Re-login is required for group changes to apply."
-fi
-
-echo "Verifying Docker daemon"
-if ! $SUDO docker info >/dev/null 2>&1; then
-  echo "Docker daemon is not reachable. Check: systemctl status docker" >&2
-  exit 1
-fi
 
 echo "Verifying QEMU binary"
 qemu-system-aarch64 --version | head -n 1
 
+echo ""
 echo "Host prerequisites are ready."
-echo "Next: bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest"
+echo "Next: bash scripts/download-and-run-qemu.sh --release latest"
+echo ""
+echo "Optional: install the GitHub CLI for authenticated API calls (higher rate limits):"
+echo "  https://cli.github.com/"
