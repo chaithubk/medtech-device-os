@@ -2,6 +2,17 @@
 
 Embedded Linux operating system for medical IoT devices using Yocto Project (kirkstone).
 
+## Program Context
+
+This repository is the QEMU / Yocto Linux device OS for the MedTech program.
+
+### Context files
+- [AI Context](docs/ai-context.md)
+- [Program Context](docs/program-context.md)
+- [Project Context](docs/project-context.md)
+
+These files describe the device OS role, build/runtime expectations, the shared telemetry contract, and the current program direction.
+
 ## Table of Contents
 
 - [Start Here](#start-here)
