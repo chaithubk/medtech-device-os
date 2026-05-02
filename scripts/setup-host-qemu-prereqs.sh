@@ -84,6 +84,7 @@ if [[ "$NO_INSTALL" -eq 0 ]]; then
     qemu-efi-aarch64
 fi
 
+require_cmd curl
 require_cmd qemu-system-aarch64
 
 echo "Verifying QEMU binary"

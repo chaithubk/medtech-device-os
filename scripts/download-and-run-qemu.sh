@@ -149,9 +149,10 @@ require_cmd qemu-system-aarch64
 # Cleanup trap
 # ---------------------------------------------------------------------------
 WORKDIR_ABS="$(realpath -m "$WORKDIR")"
+WORKDIR_CREATED=0
 
 cleanup() {
-  if [[ "$KEEP" -eq 0 && -d "$WORKDIR_ABS" ]]; then
+  if [[ "$KEEP" -eq 0 && "$WORKDIR_CREATED" -eq 1 && -d "$WORKDIR_ABS" ]]; then
     echo ""
     echo "Cleaning up work directory: $WORKDIR_ABS"
     rm -rf "$WORKDIR_ABS"
@@ -159,6 +160,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ ! -d "$WORKDIR_ABS" ]]; then
+  WORKDIR_CREATED=1
+fi
 mkdir -p "$WORKDIR_ABS"
 
 # ---------------------------------------------------------------------------
@@ -173,15 +177,23 @@ else
   API_URL="https://api.github.com/repos/${REPO}/releases/tags/${RELEASE_TAG}"
 fi
 
-# Use gh CLI if available (authenticated, higher rate limits); fall back to curl
+# Use gh CLI if available (authenticated, higher rate limits); fall back to curl.
+# curl respects GITHUB_TOKEN / GH_TOKEN environment variables for private repos.
 fetch_json() {
   local url="$1"
   if command -v gh >/dev/null 2>&1; then
     gh api "${url#https://api.github.com/}" 2>/dev/null
   else
+    local -a auth_header=()
+    local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+    # Guard against header injection: tokens must not contain newlines or CR.
+    if [[ -n "$token" && "$token" != *$'\n'* && "$token" != *$'\r'* ]]; then
+      auth_header=(-H "Authorization: Bearer ${token}")
+    fi
     curl -fsSL \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
+      "${auth_header[@]}" \
       "$url"
   fi
 }
@@ -209,11 +221,16 @@ get_asset_url() {
       '.assets[] | select(.name | test($pat)) | .browser_download_url' \
       "$RELEASE_JSON" | head -n 1
   else
-    # Match only on the filename portion (last segment before closing quote) to avoid
-    # false positives when the pattern appears elsewhere in the URL.
-    grep -o '"browser_download_url": *"[^"]*"' "$RELEASE_JSON" \
-      | grep -E '"[^"/]*'"$name_pattern"'[^"/]*"[[:space:]]*$' \
-      | sed 's/.*"browser_download_url": *"//; s/"//' | head -n 1
+    # Extract the URL value for every browser_download_url entry, then filter
+    # by whether the basename (last path segment) matches the pattern.
+    # Process substitution avoids a subshell so local variables behave correctly.
+    while IFS= read -r url; do
+      local fname="${url##*/}"
+      echo "$fname" | grep -qE "$name_pattern" && echo "$url"
+    done < <(
+      grep -o '"browser_download_url": *"[^"]*"' "$RELEASE_JSON" \
+        | sed 's/.*"browser_download_url": *"//; s/"$//'
+    ) | head -n 1
   fi
 }
 
@@ -259,18 +276,22 @@ download_asset() {
   local label="$3"
 
   echo "  Downloading $label ..."
+  local -a auth_header=()
   if command -v gh >/dev/null 2>&1; then
     # Store token in a variable before interpolating into header to prevent word-splitting
     local gh_token
     gh_token="$(gh auth token 2>/dev/null || true)"
-    if [[ -n "$gh_token" ]]; then
-      curl -fsSL -H "Authorization: token ${gh_token}" -L "$url" -o "$dest"
-    else
-      curl -fsSL -L "$url" -o "$dest"
+    # Guard against header injection: tokens must not contain newlines or CR.
+    if [[ -n "$gh_token" && "$gh_token" != *$'\n'* && "$gh_token" != *$'\r'* ]]; then
+      auth_header=(-H "Authorization: token ${gh_token}")
     fi
   else
-    curl -fsSL -L "$url" -o "$dest"
+    local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+    if [[ -n "$token" && "$token" != *$'\n'* && "$token" != *$'\r'* ]]; then
+      auth_header=(-H "Authorization: Bearer ${token}")
+    fi
   fi
+  curl -fsSL "${auth_header[@]}" -L "$url" -o "$dest"
 }
 
 BUNDLE_FILE="$WORKDIR_ABS/$(basename "$BUNDLE_URL")"
@@ -339,7 +360,10 @@ if [[ -z "$ROOTFS" ]]; then
   ROOTFS="$(find "${SEARCH_ROOTS[@]}" -type f -name "*.ext4" 2>/dev/null | head -n 1 || true)"
 fi
 
-DTB="$(find "${SEARCH_ROOTS[@]}" -type f -name "*.dtb" 2>/dev/null | head -n 1 || true)"
+DTB="$(find "${SEARCH_ROOTS[@]}" -type f -name "*qemuarm64*.dtb" 2>/dev/null | head -n 1 || true)"
+if [[ -z "$DTB" ]]; then
+  DTB="$(find "${SEARCH_ROOTS[@]}" -type f -name "*.dtb" 2>/dev/null | head -n 1 || true)"
+fi
 
 if [[ -z "$KERNEL" ]]; then
   echo "Error: Could not find kernel image in extracted bundle." >&2
@@ -403,10 +427,13 @@ echo ""
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "Dry run enabled. QEMU command:"
-  echo "  ${QEMU_CMD[*]}"
+  printf '  '
+  printf '%q ' "${QEMU_CMD[@]}"
+  printf '\n'
   KEEP=1   # don't clean up in dry-run so the user can inspect
   exit 0
 fi
 
 echo "=== Booting QEMU ==="
-exec "${QEMU_CMD[@]}"
+# Run QEMU without exec so the EXIT trap fires and cleanup runs after the VM exits.
+"${QEMU_CMD[@]}"

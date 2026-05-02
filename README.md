@@ -134,12 +134,12 @@ bash scripts/download-and-run-qemu.sh --release latest
 
 3. Connect with SSH using [SSH Access After Boot (both paths)](#ssh-access-after-boot-both-paths).
 
-### Path C: Run a GHCR Image (legacy)
+### Path C: Run a GHCR Image (legacy, not actively published)
 
-The GHCR Docker-based path is preserved for reference but is no longer the primary deployment mechanism. Use Path B (GitHub Releases) instead.
+> **Note:** CI no longer pushes to GHCR. This path only works against images that were published before this change. **Docker must be installed separately** — `setup-host-qemu-prereqs.sh` no longer installs Docker. Use Path B (GitHub Releases) for current builds.
 
 ```bash
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image-medtech:latest
 ```
 
 ### SSH Access After Boot (both paths)
