@@ -8,8 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/qemu-image
   CI_BUILD_IMAGE: core-image-medtech
   GIT_TERMINAL_PROMPT: "0"
 
@@ -20,8 +18,7 @@ jobs:
     # GitHub-hosted runners cap a single job at 360 minutes.
     timeout-minutes: 360
     permissions:
-      contents: read
-      packages: write
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -356,30 +353,54 @@ jobs:
           if-no-files-found: warn
 
 
-      # === Build and push QEMU image to GHCR ===
-      # PRs: tagged with pr-<number> so they're inspectable without polluting latest.
-      # main: tagged latest.
-      - name: Build and push qemu-image-medtech to GHCR
-        if: github.event.pull_request.head.repo.full_name == github.repository || github.ref == 'refs/heads/main'
+      # === Create GitHub Release with QEMU artifacts ===
+      # push to main: tagged "latest" (stable release, overwrite previous latest)
+      # workflow_dispatch: tagged "dev-<sha>" as a prerelease regardless of branch,
+      #   so manual runs never overwrite the production "latest" tag.
+
+      - name: Compute release tag
+        id: release_meta
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            IMAGE_TAG="pr-${{ github.event.pull_request.number }}"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "tag=latest"          >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"    >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"    >> "$GITHUB_OUTPUT"
           else
-            IMAGE_TAG="latest"
+            echo "tag=dev-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"           >> "$GITHUB_OUTPUT"
+            echo "make_latest=false"         >> "$GITHUB_OUTPUT"
           fi
-          FULL_IMAGE_REF="${REGISTRY}/${{ github.repository }}/qemu-image-medtech:${IMAGE_TAG}"
-          echo "=== Building and pushing to GHCR ==="
-          echo "Image: $FULL_IMAGE_REF"
-          docker build \
-            --label org.opencontainers.image.title="medtech qemu image bundle" \
-            --label org.opencontainers.image.description="Yocto QEMU artifact bundle for ${CI_BUILD_IMAGE}" \
-            --label org.opencontainers.image.source="https://github.com/${{ github.repository }}" \
-            --label org.opencontainers.image.revision="${{ github.sha }}" \
-            -f Dockerfile.qemu-artifacts \
-            -t "$FULL_IMAGE_REF" .
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
-          docker push "$FULL_IMAGE_REF"
-          echo "Successfully pushed: $FULL_IMAGE_REF"
+
+      - name: Create GitHub Release with Artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/core-image-medtech-qemuarm64-bundle.tar.gz
+            artifacts/core-image-medtech-qemuarm64-manifest.json
+            artifacts/SHA256SUMS
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          body: |
+            **Build Info**
+            - Commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+            - Image: core-image-medtech-qemuarm64
+
+            **Quick Start** (no Docker required):
+            ```bash
+            bash scripts/download-and-run-qemu.sh --release ${{ steps.release_meta.outputs.tag }}
+            ```
+
+            **Verify Checksums**:
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+          prerelease: ${{ steps.release_meta.outputs.prerelease }}
+          draft: false
+          generate_release_notes: true
+          make_latest: ${{ steps.release_meta.outputs.make_latest }}
+          allow_overwrite: true
 
       - name: Final disk report
         if: always()

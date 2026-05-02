@@ -32,11 +32,27 @@ If you are new to this repository, follow this order:
 ## Deployment
 
 
-This project supports two deployment/testing paths for QEMU images.
+This project distributes QEMU images via **GitHub Releases** — no Docker required.
 
-### Packaging and Verifying GHCR Artifacts
+### Quick Start: Run Latest Release
 
-After building your image, you can package the QEMU artifacts for distribution and verify their integrity using the provided scripts:
+1. Prepare host once (QEMU packages only):
+
+```bash
+bash scripts/setup-host-qemu-prereqs.sh
+```
+
+2. Download and run the latest release:
+
+```bash
+bash scripts/download-and-run-qemu.sh --release latest
+```
+
+3. Connect with SSH using [SSH Access After Boot (both paths)](#ssh-access-after-boot-both-paths).
+
+### Packaging and Verifying Artifacts
+
+After building your image locally, you can package the QEMU artifacts and verify their integrity:
 
 #### 1. Package the Artifacts
 
@@ -100,7 +116,9 @@ Boot command details (terminal mode):
 bash scripts/run-qemu.sh
 ```
 
-### Path B: Run a GHCR Image on Ubuntu Host (outside container)
+### Path B: Download and Run a GitHub Release (outside container)
+
+> **No Docker required.**
 
 1. Prepare host once:
 
@@ -108,36 +126,21 @@ bash scripts/run-qemu.sh
 bash scripts/setup-host-qemu-prereqs.sh
 ```
 
-2. Run GHCR image (kernel + rootfs auto-detected from `/artifacts/`):
+2. Download and run (kernel + rootfs auto-detected from bundle):
 
 ```bash
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest
+bash scripts/download-and-run-qemu.sh --release latest
 ```
 
 3. Connect with SSH using [SSH Access After Boot (both paths)](#ssh-access-after-boot-both-paths).
 
-### GHCR Unauthorized Error (quick fix)
+### Path C: Run a GHCR Image (legacy, not actively published)
 
-If pull fails with `unauthorized`, authenticate Docker to GHCR:
-
-```bash
-export GHCR_PAT=<token-with-read:packages>
-echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
-```
-
-If the package belongs to an organization, ensure the token is SSO-authorized for that org.
-
-### Missing Kernel in Older GHCR Images
-
-If you have an older GHCR image that only contains `.ext4` (no kernel), provide kernel path explicitly:
+> **Note:** CI no longer pushes to GHCR. This path only works against images that were published before this change. **Docker must be installed separately** — `setup-host-qemu-prereqs.sh` no longer installs Docker. Use Path B (GitHub Releases) for current builds.
 
 ```bash
-bash scripts/run-ghcr-qemu.sh \
-  --image ghcr.io/<owner>/<repo>/qemu-image:old-tag \
-  --kernel /path/to/Image-qemuarm64.bin
+bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image-medtech:latest
 ```
-
-New builds (after this CI fix) include kernel + rootfs + dtb in `/artifacts/`, so you won't need `--kernel`.
 
 ### SSH Access After Boot (both paths)
 
@@ -159,7 +162,7 @@ ssh -p 2222 root@localhost
 - ✅ CycloneDX SBOM generation
 - ✅ QEMU ARM64 emulator
 - ✅ SSH server
-- ✅ CI/CD via GitHub Actions → GHCR
+- ✅ CI/CD via GitHub Actions → GitHub Releases
 
 ### Architecture
 
@@ -284,17 +287,19 @@ GitHub Actions (`.github/workflows/device-build-smart.yml`) automatically:
 3. Runs the medtech-specific manifest and Python runtime checks on `main` builds
 4. Uploads the built `.ext4` image as an artifact
 5. Uploads the SPDX SBOM for `core-image-medtech` builds
-6. **Packages kernel, rootfs, and DTB into a Docker image and pushes to GHCR** (`ghcr.io/<owner>/medtech-device-os/qemu-image:latest` for main branch)
+6. **Creates a GitHub Release with the QEMU bundle, manifest, and SHA256SUMS** (main branch and workflow_dispatch only)
 
-#### GHCR Image Contents
+#### GitHub Release Contents
 
-The Docker image pushed to GHCR contains:
-- Yocto kernel image (`Image` or `Image-qemuarm64.bin`)
-- Rootfs image (`*.ext4`)
-- Device tree blob (`*.dtb`, if available)
-- SPDX SBOM files (for `core-image-medtech` only)
+Each release published to GitHub Releases contains:
+- `core-image-medtech-qemuarm64-bundle.tar.gz` — Yocto kernel image, rootfs (`.ext4`), and optional DTB
+- `core-image-medtech-qemuarm64-manifest.json` — Build metadata and per-file checksums
+- `SHA256SUMS` — SHA256 checksums for the bundle and manifest
 
-All artifacts are located in `/artifacts/` inside the container for easy extraction.
+Download and run with a single command (no Docker needed):
+```bash
+bash scripts/download-and-run-qemu.sh --release latest
+```
 
 #### Build Artifacts, Archives, and Retention
 
