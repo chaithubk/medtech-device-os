@@ -96,9 +96,12 @@ BB_STRICT_CHECKSUM = "1"
 # Abort when disk is critically low so workflow fails early and clearly
 BB_DISKMON_DIRS = "ABORT,${TMPDIR},100M,100K"
 
-# Hash equivalency server — dramatically speeds up incremental CI builds
-# by sharing task signatures across machines
-BB_HASHSERVE = "auto"
+# Hash equivalency server — disabled because SSTATE_MIRRORS is set above.
+# Using a local hash-equiv server together with a remote sstate mirror produces
+# a BitBake warning ("no sstate will match from the mirror") and provides no
+# benefit: the upstream mirror already encodes equivalent task hashes.
+# Re-enable with BB_HASHSERVE = "auto" only in mirror-free / air-gapped setups.
+BB_HASHSERVE = ""
 
 # Print failed task output in the terminal with enough context for CI triage
 BBINCLUDELOGS = "yes"

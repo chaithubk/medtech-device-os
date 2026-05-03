@@ -65,7 +65,7 @@ Checksum verification passed.
 
 === Booting QEMU ===
 Waiting for SSH daemon on 127.0.0.1:2222 ...
-  ✓ SSH port is open (daemon is up)
+  ✓ SSH daemon is responding
 
 Connect now:
   ssh -p 2222 root@localhost

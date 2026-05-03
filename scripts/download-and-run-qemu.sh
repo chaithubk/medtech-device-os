@@ -406,10 +406,21 @@ echo "  DTB    : ${DTB:-<none>}"
 # ---------------------------------------------------------------------------
 # Build QEMU command
 # ---------------------------------------------------------------------------
-if [[ "$GRAPHICS" -eq 1 ]]; then
+# Determine display / serial mode based on flags:
+#   --console  → force -nographic (serial on stdio), run QEMU in foreground
+#   --graphics → open a GTK window (-display gtk)
+#   default    → -display none (no window, no serial on stdio); SSH is the
+#                access method; QEMU runs in the foreground while SSH poll
+#                happens in the background
+if [[ "$CONSOLE" -eq 1 ]]; then
+  # Serial console attached to this terminal — ignore --graphics if also set.
+  DISPLAY_ARGS=(-nographic)
+elif [[ "$GRAPHICS" -eq 1 ]]; then
   DISPLAY_ARGS=(-display gtk)
 else
-  DISPLAY_ARGS=(-nographic)
+  # Default SSH mode: suppress serial/display output so the terminal is clean
+  # for our SSH-wait progress messages.  Access is via SSH (port 2222).
+  DISPLAY_ARGS=(-display none -serial null)
 fi
 
 QEMU_CMD=(
@@ -527,15 +538,34 @@ print_boot_info
 
 echo "=== Booting QEMU ==="
 
+# ---------------------------------------------------------------------------
+# QEMU process management
+# ---------------------------------------------------------------------------
+QEMU_PID=""
+
+# Kill QEMU if we receive SIGINT or SIGTERM so no orphan VM is left behind.
+# The EXIT trap (defined earlier) handles workdir cleanup after QEMU exits.
+_terminate_qemu() {
+  if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then
+    echo ""
+    echo "Stopping QEMU (PID $QEMU_PID)..."
+    kill "$QEMU_PID" 2>/dev/null || true
+    wait "$QEMU_PID" 2>/dev/null || true
+  fi
+}
+trap '_terminate_qemu; exit 130' INT
+trap '_terminate_qemu; exit 143' TERM
+
 if [[ "$CONSOLE" -eq 1 ]]; then
-  # Direct serial console mode: run in foreground, user gets the terminal.
+  # Direct serial console mode: QEMU in foreground, user owns the terminal.
   echo "(Console mode: QEMU serial console attached. Exit with Ctrl+A then X.)"
   echo ""
   # Run QEMU without exec so the EXIT trap fires and cleanup runs after the VM exits.
   "${QEMU_CMD[@]}"
 else
-  # Background QEMU so we can poll for SSH readiness, then bring it back to
-  # the foreground once SSH is ready (or if the user skips the wait).
+  # SSH mode: QEMU runs in the foreground (so serial/display flags are clean),
+  # while an SSH poller runs in the background subshell.  When polling
+  # finishes the subshell exits; we then simply wait for QEMU to finish.
   "${QEMU_CMD[@]}" &
   QEMU_PID=$!
 
@@ -556,4 +586,5 @@ else
 
   # Wait for QEMU to exit (keeps the script alive and ensures cleanup runs).
   wait "$QEMU_PID" || true
+  QEMU_PID=""
 fi

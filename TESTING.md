@@ -319,7 +319,7 @@ Before merging a PR that touches scripts or documentation:
 - [ ] `scripts/package-release-artifacts.sh --help` works
 - [ ] `scripts/verify-release-package.sh --help` works
 - [ ] `scripts/bitbake` exists and is executable
-- [ ] `.devcontainer/devcontainer.json` is valid JSON
+- [ ] `.devcontainer/devcontainer.json` is valid JSONC (VS Code accepts it; the Dev Container CLI validates it)
 - [ ] `yocto/meta-medtech/conf/layer.conf` parses correctly (test with `bitbake -p`)
 - [ ] All doc files exist (see docs/README.md table)
 - [ ] No broken Markdown syntax (headers, code blocks, links)

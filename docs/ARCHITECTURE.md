@@ -199,18 +199,25 @@ GitHub Actions CI
 
 ## Network Architecture (QEMU)
 
-QEMU uses user-mode networking with port forwarding:
+QEMU uses user-mode networking with port forwarding. Only SSH (port 22) is
+forwarded to the host by default:
 
 ```
 Host machine
-├── Port 2222 ──→ QEMU VM: Port 22 (SSH)
-├── Port 1883 ──→ QEMU VM: Port 1883 (MQTT) [via dev container port forward]
-└── Port 5005 ──→ QEMU VM: Port 5005 (Debug) [via dev container port forward]
+└── Port 2222 ──→ QEMU VM: Port 22 (SSH)
 
-Inside QEMU VM:
+Inside QEMU VM (not exposed to host by default):
 ├── 127.0.0.1:22    → OpenSSH
-├── 127.0.0.1:1883  → Mosquitto
+├── 127.0.0.1:1883  → Mosquitto (MQTT)
 └── 10.0.2.x        → Default QEMU NAT gateway
+```
+
+To expose additional ports (e.g. MQTT broker for testing), add `hostfwd` rules
+to the QEMU command's `-netdev` option:
+
+```bash
+# Example: forward host:1883 → VM:1883
+-netdev "user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22,hostfwd=tcp:127.0.0.1:1883-:1883"
 ```
 
 QEMU MAC address: `52:54:00:12:34:02` (fixed, for reproducibility).
