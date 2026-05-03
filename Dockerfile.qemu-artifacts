@@ -1,8 +1,0 @@
-# Dockerfile to package Yocto QEMU artifacts (kernel + rootfs + dtb) for distribution via GHCR.
-# Usage: docker build -f Dockerfile.qemu-artifacts -t ghcr.io/<owner>/<repo>/qemu-image:latest .
-# The built image contains artifacts in /artifacts/ for easy extraction.
-
-FROM scratch
-
-# Ship the packaged Yocto bundle and metadata as immutable OCI content.
-COPY artifacts/ /artifacts/

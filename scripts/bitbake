@@ -1,4 +1,85 @@
 #!/bin/bash
+# =============================================================================
+# bitbake — MedTech Device OS Build Wrapper
+# =============================================================================
+#
+# PURPOSE
+# -------
+# This script is a transparent wrapper around the real BitBake binary that
+# lives inside the Yocto/Poky tree. It exists to solve two critical problems
+# specific to the dev-container environment:
+#
+#  1. ROOT BUILD PREVENTION
+#     BitBake refuses to run as root (UID 0). The dev container runs as root
+#     by default, so a naive `bitbake` call would fail with:
+#
+#       "Do not use Bitbake as root"
+#
+#     This wrapper detects root and transparently switches to the non-root
+#     `builder` user (created during container setup) using `su - builder`.
+#     The `builder` user owns /workspace and has the correct environment for
+#     Yocto builds.
+#
+#  2. ENVIRONMENT SETUP GUARANTEE
+#     BitBake requires a properly initialized build environment:
+#       - yocto/poky/oe-init-build-env must have been sourced
+#       - yocto/build/conf/bblayers.conf must reference all required layers
+#       - yocto/build/conf/local.conf must exist with proper settings
+#     If any of these are missing (e.g., after a fresh container start or
+#     a container rebuild), this wrapper automatically runs quick-setup.sh
+#     to restore the environment before invoking BitBake.
+#
+# HOW IT WORKS
+# ------------
+#  1. Check if the build environment is ready (bblayers_ready).
+#  2. If not ready, run quick-setup.sh silently to initialize it.
+#  3. If running as root, switch to the `builder` user and exec BitBake
+#     with all original arguments preserved.
+#  4. If already running as a non-root user, source oe-init-build-env and
+#     exec BitBake directly.
+#
+# USAGE
+# -----
+# Simply call `bitbake` as you normally would. Examples:
+#
+#   # Build the full medtech image (most common)
+#   bitbake core-image-medtech
+#
+#   # Build a single recipe
+#   bitbake medtech-vitals-publisher
+#
+#   # Force clean rebuild of a recipe
+#   bitbake -c cleansstate medtech-vitals-publisher && bitbake medtech-vitals-publisher
+#
+#   # Check what would be built (no actual build)
+#   bitbake -n core-image-medtech
+#
+#   # Parse metadata and check for errors
+#   bitbake -p
+#
+# IMPORTANT: PATH SETUP
+# ----------------------
+# This wrapper works because /workspace/scripts is prepended to PATH in the
+# dev container (see .devcontainer/devcontainer.json remoteEnv.PATH). This
+# means typing `bitbake` finds this wrapper before any system-installed
+# BitBake binary.
+#
+# The wrapper is also symlinked or available through the PATH as `bitbake`,
+# allowing it to be called from any directory inside the container.
+#
+# ADVANCED USAGE (direct BitBake)
+# --------------------------------
+# If you need to call BitBake directly (bypassing this wrapper), source the
+# Yocto environment manually first:
+#
+#   cd /workspace
+#   source yocto/poky/oe-init-build-env yocto/build
+#   /workspace/yocto/poky/bitbake/bin/bitbake <args>
+#
+# WARNING: Running as root without this wrapper will fail. Always either use
+# this wrapper or switch to the `builder` user manually.
+#
+# =============================================================================
 
 set -e
 

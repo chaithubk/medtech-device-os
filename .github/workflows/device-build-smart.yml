@@ -328,13 +328,13 @@ jobs:
           echo "=== Collecting SPDX SBOM ==="
           bash scripts/process-sbom.sh || true
 
-      - name: Package GHCR bundle
+      - name: Package release bundle
         run: |
-          bash scripts/package-ghcr-artifacts.sh --image-name "${CI_BUILD_IMAGE}"
+          bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"
 
-      - name: Verify GHCR bundle
+      - name: Verify release bundle
         run: |
-          bash scripts/verify-ghcr-package.sh --image-name "${CI_BUILD_IMAGE}"
+          bash scripts/verify-release-package.sh --image-name "${CI_BUILD_IMAGE}"
 
       - name: Finalize upload directory
         run: |
