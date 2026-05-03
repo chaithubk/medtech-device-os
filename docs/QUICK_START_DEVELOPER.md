@@ -38,7 +38,7 @@
 
 ## Step 2: Build the image
 
-Open a terminal in VS Code (`Ctrl+`` `) and run:
+Open a terminal in VS Code (`` Ctrl+` ``) and run:
 
 ```bash
 bitbake core-image-medtech

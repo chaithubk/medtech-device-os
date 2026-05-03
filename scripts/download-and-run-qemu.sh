@@ -452,17 +452,11 @@ wait_for_ssh() {
   echo "(Timeout: ${timeout}s — use --no-wait-ssh to skip, or --console for direct terminal)"
 
   while (( elapsed < timeout )); do
-    if ssh -o StrictHostKeyChecking=no \
-           -o ConnectTimeout=2 \
-           -o BatchMode=yes \
-           -o PasswordAuthentication=no \
-           -p "$port" "root@${host}" true 2>/dev/null; then
-      echo "  ✓ SSH daemon is responding"
-      return 0
-    fi
-    # Fall back to port-open check (key auth not set up; just check TCP)
+    # Check if the SSH port is accepting connections (TCP level).
+    # This is reliable even for password-only systems (root:root) since we only
+    # need to verify the daemon is listening — not that we can authenticate.
     if bash -c "echo >/dev/tcp/${host}/${port}" 2>/dev/null; then
-      echo "  ✓ SSH port is open (daemon is up)"
+      echo "  ✓ SSH daemon is responding"
       return 0
     fi
     printf "  [%ds] Still booting...\r" "$elapsed"
