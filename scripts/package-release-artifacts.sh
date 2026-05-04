@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
+# Package Yocto QEMU artifacts into a release bundle for GitHub Releases.
+# Produces: bundle.tar.gz, manifest.json, and SHA256SUMS.
 
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/package-ghcr-artifacts.sh --image-name <pn> [options]
+  bash scripts/package-release-artifacts.sh --image-name <pn> [options]
 
 Options:
   --image-name <pn>     BitBake image recipe name, for example core-image-medtech.
@@ -206,7 +208,7 @@ tar -C "$BUNDLE_ROOT" -czf "$ARCHIVE_PATH" payload
   sha256sum "$(basename "$ARCHIVE_PATH")" "$(basename "$MANIFEST_JSON")" > SHA256SUMS
 )
 
-echo "=== GHCR bundle created ==="
+echo "=== Release bundle created ==="
 echo "Output directory : $OUTPUT_DIR"
 echo "Archive          : $ARCHIVE_PATH"
 echo "Manifest         : $MANIFEST_JSON"

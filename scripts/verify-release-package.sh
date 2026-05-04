@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
+# Verify the integrity of a packaged release bundle.
+# Checks SHA256 checksums, archive structure, and required payload files.
 
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/verify-ghcr-package.sh --image-name <pn> [options]
+  bash scripts/verify-release-package.sh --image-name <pn> [options]
 
 Options:
   --image-name <pn>   BitBake image recipe name, for example core-image-medtech.
@@ -84,7 +86,7 @@ if ! grep -Eq '^payload/metadata/manifest\.json$' "$ARCHIVE_LISTING"; then
   exit 1
 fi
 
-echo "=== GHCR bundle verification passed ==="
+echo "=== Release bundle verification passed ==="
 echo "Archive: $ARCHIVE_PATH"
 echo "Contents summary:"
 grep -E '^payload/(image|metadata|sbom)/' "$ARCHIVE_LISTING" | sed 's#^#  #' || true

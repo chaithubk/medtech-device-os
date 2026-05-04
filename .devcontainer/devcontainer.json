@@ -1,18 +1,43 @@
 {
+  // -------------------------------------------------------------------------
+  // Dev Container: MedTech Device OS (Yocto ARM64/QEMU)
+  // -------------------------------------------------------------------------
+  // This container provides the complete build environment for MedTech Device
+  // OS. It uses a custom Dockerfile that installs all Yocto host dependencies,
+  // creates a non-root `builder` user for BitBake builds, and sets up the
+  // workspace at /workspace.
+  //
+  // After the container starts, postCreateCommand runs quick-setup.sh which:
+  //   1. Clones the required Yocto layers (poky, meta-openembedded, meta-qt6)
+  //   2. Creates yocto/build/conf/bblayers.conf and local.conf
+  //   3. Ensures the `builder` user owns /workspace
+  //
+  // Once setup completes, type `bitbake core-image-medtech` from any directory.
+  // The `scripts/bitbake` wrapper handles the root→builder privilege drop and
+  // environment sourcing automatically.
+  // -------------------------------------------------------------------------
   "name": "Yocto Device OS (ARM/QEMU)",
   "build": {
     "dockerfile": "Dockerfile",
     "context": "."
   },
+  // Mounts the repository root to /workspace inside the container.
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "customizations": {
     "vscode": {
       "extensions": [
+        // Python support: syntax, linting, debugging for medtech services
         "ms-python.python",
+        // Git history and blame annotations
         "eamodio.gitlens",
+        // GitHub Copilot AI assistant
         "github.copilot",
-        "github.copilot-chat"
+        "github.copilot-chat",
+        // Shell script linting (shellcheck) — useful for reviewing scripts/
+        "timonwong.shellcheck",
+        // Shell script formatting
+        "foxundermoon.shell-format"
       ],
       "settings": {
         "[python]": {
@@ -22,7 +47,14 @@
       }
     }
   },
+  // Runs once after the container is created (not on every start).
+  // quick-setup.sh clones Yocto layers and initializes the build config.
+  // After this completes, `bitbake` is available from any directory.
   "postCreateCommand": "bash /workspace/scripts/quick-setup.sh",
+  // Forward useful ports to the host:
+  //   2222 — QEMU SSH (connect: ssh -p 2222 root@localhost)
+  //   1883 — Mosquitto MQTT broker (medtech/vitals/#)
+  //   5005 — Java/Python debug port (optional)
   "forwardPorts": [2222, 1883, 5005],
   "portsAttributes": {
     "2222": {
@@ -38,20 +70,32 @@
       "onAutoForward": "notify"
     }
   },
+  // Run as root inside the container. The `scripts/bitbake` wrapper
+  // automatically drops privileges to `builder` when BitBake is invoked,
+  // because BitBake refuses to run as UID 0.
   "remoteUser": "root",
   "remoteEnv": {
+    // Prepend /workspace/scripts to PATH so the `bitbake` wrapper (and other
+    // scripts) are found first, before any system-installed binaries.
+    // This is what makes typing `bitbake` work from any directory.
     "PATH": "/workspace/scripts:${containerEnv:PATH}",
     "DOCKER_HOST": "unix:///var/run/docker.sock",
+    // Yocto build configuration defaults — referenced by setup scripts.
     "YOCTO_BRANCH": "kirkstone",
     "MACHINE": "qemuarm64",
     "DISTRO": "poky",
+    // Ensure Python output (e.g., vitals publisher logs) is not buffered.
     "PYTHONUNBUFFERED": "1"
   },
   "mounts": [
+    // Expose Docker socket for scripts that may use Docker (e.g., run-qemu.sh).
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
   "runArgs": [
+    // Privileged mode is required for QEMU hardware acceleration (KVM) and
+    // some Yocto pseudo-filesystem operations.
     "--privileged",
+    // Use Google DNS for reliable layer fetching in environments with VPN/proxy.
     "--dns=8.8.8.8",
     "--dns=8.8.4.4"
   ]

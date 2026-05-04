@@ -1,220 +1,279 @@
 # Scripts Guide
 
-## Build Scripts
+Scripts are organized by purpose and audience.
+
+| Emoji | Category |
+|---|---|
+| 🚀 | User scripts — for running QEMU images (no build required) |
+| 👨‍💻 | Developer scripts — for building inside the dev container |
+| 🔧 | CI-internal scripts — used by the GitHub Actions pipeline |
+
+---
+
+## 🚀 User Scripts (run releases, no build)
+
+### `setup-host-qemu-prereqs.sh`
+
+**Prepare a plain Ubuntu host to run QEMU releases. Run once.**
+
+- Installs `qemu-system-aarch64` and related packages
+- No Docker required
+- Validates the installation after installing
+
+```bash
+bash scripts/setup-host-qemu-prereqs.sh
+
+# Only validate (skip install)
+bash scripts/setup-host-qemu-prereqs.sh --no-install
+```
+
+---
+
+### `download-and-run-qemu.sh`
+
+**Download a GitHub Release and boot it in QEMU. The primary user script.**
+
+- Downloads bundle, manifest, and SHA256SUMS from GitHub Releases
+- Verifies SHA256 checksums before extraction
+- Boots `qemu-system-aarch64` with SSH forwarded to `localhost:2222`
+- **Automatically waits for SSH daemon** (up to 60 seconds, with progress)
+- Shows a formatted boot info box with credentials and access methods
+- Cleans up the work directory on exit unless `--keep` is set
+
+```bash
+# Download and boot the latest release (SSH wait included)
+bash scripts/download-and-run-qemu.sh
+
+# Boot a specific release version
+bash scripts/download-and-run-qemu.sh --release v1.2.3
+
+# Direct serial console access (interactive terminal, no SSH wait)
+bash scripts/download-and-run-qemu.sh --console
+
+# Skip SSH wait (for CI/automation)
+bash scripts/download-and-run-qemu.sh --no-wait-ssh
+
+# Boot with more memory
+bash scripts/download-and-run-qemu.sh --memory 512
+
+# Keep artifacts after exit
+bash scripts/download-and-run-qemu.sh --keep
+
+# Preview QEMU command without booting
+bash scripts/download-and-run-qemu.sh --dry-run
+```
+
+---
+
+## 👨‍💻 Developer Scripts (build inside dev container)
+
+### `bitbake` *(wrapper — not a script you call directly)*
+
+**A transparent wrapper around the real BitBake binary. This is what makes `bitbake` work everywhere in the container.**
+
+- Detects if the build environment is initialized; runs `quick-setup.sh` if not
+- **Automatically drops from root to the `builder` user** (BitBake refuses root builds)
+- Sources `oe-init-build-env` before calling the real BitBake
+- Preserves all arguments and flags passed to it
+
+```bash
+# Works from any directory in the container:
+bitbake core-image-medtech
+bitbake medtech-vitals-publisher
+bitbake -c cleansstate medtech-system && bitbake medtech-system
+bitbake -p   # parse only
+```
+
+This wrapper lives at `scripts/bitbake` and is found first because
+`/workspace/scripts` is prepended to `PATH` in `.devcontainer/devcontainer.json`.
+
+See the file itself for the full documented implementation.
+
+---
 
 ### `build.sh`
+
 **Quick local build** for development iteration.
+
 - Initializes Yocto environment in one step
 - Adds local workarounds for Qt/network issues
 - Suitable for: testing recipe changes, quick iterations
 
-**Usage:**
 ```bash
 bash scripts/build.sh
 ```
 
+---
+
 ### `build-robust.sh`
+
 **Production-grade build** with full diagnostics and error recovery.
+
 - Runs pre-flight checks → clones layers with retry → builds with diagnostics
 - Collects disk usage, compiler versions, failed task logs
-- Same workflow as CI pipeline
-- Suitable for: final validation before CI push, reproducible builds, troubleshooting
+- Matches CI pipeline behavior
+- Suitable for: final validation before CI push, reproducible builds
 
-**Usage:**
 ```bash
 bash scripts/build-robust.sh
 ```
 
 ---
 
-## Run & Test Scripts
-
 ### `run-qemu.sh`
-**Boot the built image in QEMU ARM64 emulator** for testing.
-- Validates kernel and rootfs exist
-- Launches qemu-system-aarch64 with proper device configuration
-- SSH available on localhost:2222
-- Suitable for: sanity checks inside QEMU, testing services
 
-**Inside QEMU terminal console:**
+**Boot the locally-built image in QEMU** (after `bitbake core-image-medtech`).
+
+- Validates kernel and rootfs exist in the deploy directory
+- Launches `qemu-system-aarch64` with proper device configuration
+- SSH available on `localhost:2222`
+
 ```bash
-# Login: root
-# Password: root
+bash scripts/run-qemu.sh           # nographic (terminal console)
+bash scripts/run-qemu.sh --graphics  # with GTK display
+```
+
+**Inside QEMU:**
+```bash
+# Login: root / Password: root
 systemctl status mosquitto
-systemctl status medtech-vitals-publisher
 mosquitto_sub -t "medtech/#" -v
 ```
 
-**SSH into QEMU from host** (port 2222):
+**SSH from host:**
 ```bash
-ssh -p 2222 root@localhost
-# Password: root
+ssh -p 2222 root@localhost   # Password: root
 ```
 
-**Usage:**
-```bash
-bash scripts/run-qemu.sh              # nographic (terminal mode)
-bash scripts/run-qemu.sh --graphics   # with GUI
-```
-
-### `download-and-run-qemu.sh`
-**Download QEMU artifacts from GitHub Releases and boot in QEMU.** No Docker required.
-- Fetches release metadata and asset URLs from the GitHub API
-- Downloads bundle.tar.gz, manifest.json, and SHA256SUMS
-- Verifies SHA256 checksums before extraction
-- Auto-detects kernel, rootfs, and optional DTB inside the extracted bundle
-- Boots `qemu-system-aarch64` with SSH forwarded to `localhost:2222`
-- Cleans up the work directory on exit unless `--keep` is set
-- Suitable for: running CI-published image artifacts on a plain Ubuntu host without Docker
-
-**Usage:**
-```bash
-# Download and run the latest release
-bash scripts/download-and-run-qemu.sh
-
-# Run a specific release tag
-bash scripts/download-and-run-qemu.sh --release v1.2.3
-
-# Keep artifacts after QEMU exits
-bash scripts/download-and-run-qemu.sh --keep
-
-# Enable graphical display
-bash scripts/download-and-run-qemu.sh --graphics
-
-# Resolve artifacts and print QEMU command without running it
-bash scripts/download-and-run-qemu.sh --dry-run
-```
-
-### `run-ghcr-qemu.sh` *(legacy)*
-**Pull a GHCR image, extract Yocto artifacts, and boot it in QEMU on a host Ubuntu machine.**
-> **Note:** This script requires Docker. Use `download-and-run-qemu.sh` instead for the Docker-free path via GitHub Releases.
-- Pulls an image like `ghcr.io/<owner>/<repo>/qemu-image:<tag>`
-- Tries `/artifacts` first, then auto-discovers `.ext4`, `Image*`, and `.dtb` paths in the container
-- Boots `qemu-system-aarch64` with SSH forwarded to `localhost:2222`
-- Suitable for: running CI-published image artifacts outside the dev container (requires Docker)
-
-**Usage:**
-```bash
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:main --graphics
-```
-
-If the GHCR image contains only `.ext4` and no kernel artifact, provide kernel path explicitly:
-```bash
-bash scripts/run-ghcr-qemu.sh \
-	--image ghcr.io/<owner>/<repo>/qemu-image:latest \
-	--kernel /path/to/Image-qemuarm64.bin
-```
-
-**If pull returns `unauthorized`:**
-```bash
-export GHCR_PAT=<token-with-read:packages>
-echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
-```
-
-If your package is under an organization, ensure the token is SSO-authorized for that org.
-
-**Helpful options:**
-```bash
-# Just resolve artifacts and print the QEMU command
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest --dry-run
-
-# Keep extracted artifacts after QEMU exits
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest --keep
-
-# Override rootfs/dtb manually if needed
-bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest --rootfs /path/to/rootfs.ext4 --dtb /path/to/qemuarm64.dtb
-```
+---
 
 ### `test-qemu.sh`
-Automated test script that SSH's into the running QEMU image and verifies services.
+
+**Automated test** — SSHs into a running QEMU instance and verifies services.
+
 - Waits for SSH daemon to start (up to 60 seconds)
 - Checks system info, running services, MQTT topics
 - Suitable for: validating full boot without manual SSH
 
-**Usage:**
 ```bash
 bash scripts/test-qemu.sh
 ```
 
 ---
 
-## Setup & Validation Scripts
+### `quick-setup.sh`
 
-### `setup-host-qemu-prereqs.sh`
-**Prepare a plain Ubuntu host to run QEMU artifacts from GitHub Releases.**
-- Installs QEMU packages (no Docker required)
-- Verifies `qemu-system-aarch64`
-- Suitable for: first-time setup on laptops/VMs outside the dev container
-- Compatible with Ubuntu 22.04 WSL (no docker.io conflicts)
-
-**Usage:**
-```bash
-bash scripts/setup-host-qemu-prereqs.sh
-```
-
-**Optional flags:**
-```bash
-# Only validate existing installation
-bash scripts/setup-host-qemu-prereqs.sh --no-install
-```
+**One-time setup** (runs automatically via `postCreateCommand`). Clones Yocto
+layers and initializes `yocto/build/conf/`. The `bitbake` wrapper calls this
+automatically if needed.
 
 ### `setup-devenv.sh`
-Initializes the dev environment (host tools, Yocto layers).
 
-### `quick-setup.sh`
-Lightweight setup (assumes Yocto layers already present).
-
-### `preflight-check.sh`
-Validates host tools and prerequisites (called by `build-robust.sh`).
+Extended environment setup (installs host tools, clones layers). Use
+`quick-setup.sh` for most cases.
 
 ### `clone-with-retry.sh`
-Clones Yocto layers with retry logic and mirror fallback (called by `build-robust.sh`).
+
+Clones Yocto layers with retry logic and mirror fallback. Called by `build-robust.sh`.
+
+---
+
+## 🔧 CI-Internal Scripts
+
+### `package-release-artifacts.sh`
+
+**Package Yocto build outputs into a release bundle.** Used by CI to create the
+GitHub Release assets.
+
+- Stages kernel, rootfs, DTBs, SBOM, and manifest into a structured tarball
+- Generates a JSON manifest with per-file SHA256 checksums
+- Produces SHA256SUMS for bundle and manifest integrity
+
+```bash
+bash scripts/package-release-artifacts.sh --image-name core-image-medtech
+# Output: artifacts/core-image-medtech-qemuarm64-bundle.tar.gz
+#         artifacts/core-image-medtech-qemuarm64-manifest.json
+#         artifacts/SHA256SUMS
+```
+
+---
+
+### `verify-release-package.sh`
+
+**Verify the integrity of a packaged release bundle.** Used by CI after packaging.
+
+- Verifies SHA256 checksums of bundle and manifest
+- Confirms archive contains required payload files (rootfs, manifest)
+
+```bash
+bash scripts/verify-release-package.sh --image-name core-image-medtech
+```
+
+---
+
+### `preflight-check.sh`
+
+Validates host tools and prerequisites. Called by `build-robust.sh`.
 
 ### `generate-sbom.sh`
+
 Generates CycloneDX SBOM from the built image.
+```bash
+bash scripts/generate-sbom.sh
+# Output: sbom/sbom.json
+```
 
 ### `process-sbom.sh`
-Post-processes SBOM for validation.
+
+Post-processes SBOM for CI validation.
 
 ### `verify-image.sh`
-Sanity checks on the final rootfs image.
+
+Sanity checks on the final rootfs image (Python runtime coverage, etc.).
 
 ### `audit-image-deps.sh`
-Dependency-closure audit for an image target (dry-run, no full compile).
-- Generates `pn-buildlist` and `task-depends.dot`
-- Captures resolved `IMAGE_INSTALL`, `CORE_IMAGE_BASE_INSTALL`, and feature variables
-- Flags common bloat candidates (packagegroups, ptest/test stacks)
-- Extracts direct service `RDEPENDS` from `meta-medtech/recipes-services`
 
-**Usage:**
+Dependency-closure audit for an image target (dry-run, no compile).
+- Generates `pn-buildlist` and `task-depends.dot`
+- Flags common bloat candidates
+
 ```bash
 su - builder -c 'cd /workspace && bash scripts/audit-image-deps.sh core-image-medtech'
 ```
 
 ---
 
-## Recommended Workflow
+## Recommended Workflows
 
-### Local Development
-1. **Build:** `bash scripts/build.sh`
-2. **Test:** `bash scripts/run-qemu.sh`
-3. **Iterate:** Edit recipe → `bash scripts/build.sh` → test
+### User: Run the latest release
 
-### Run CI Image On Ubuntu Host (GitHub Releases, no Docker)
-1. **Prepare host:** `bash scripts/setup-host-qemu-prereqs.sh`
-2. **Download and run:** `bash scripts/download-and-run-qemu.sh --release latest`
+```bash
+bash scripts/setup-host-qemu-prereqs.sh   # once
+bash scripts/download-and-run-qemu.sh     # every time
+```
 
-### Run CI Image On Ubuntu Host (GHCR, legacy)
-1. **Prepare host:** `bash scripts/setup-host-qemu-prereqs.sh` (also needs Docker)
-2. **Run GHCR image:** `bash scripts/run-ghcr-qemu.sh --image ghcr.io/<owner>/<repo>/qemu-image:latest`
+### Developer: Build and test locally
 
-### Before CI Push
-1. **Full validation:** `bash scripts/build-robust.sh`
-2. **Generate SBOM:** `bash scripts/generate-sbom.sh`
-3. **Verify image:** `bash scripts/verify-image.sh`
-4. **Final test:** `bash scripts/run-qemu.sh`
+```bash
+# In the dev container terminal:
+bitbake core-image-medtech   # full build
+bash scripts/run-qemu.sh     # boot and test
+```
 
-### CI Pipeline
-Same as "Before CI Push" (automated in `.github/workflows/device-build-smart.yml`).
-On pushes to `main`, CI also creates a GitHub Release with the QEMU bundle.
+### Developer: Iterate on a single recipe
+
+```bash
+bitbake -c cleansstate medtech-vitals-publisher
+bitbake medtech-vitals-publisher
+bash scripts/run-qemu.sh
+```
+
+### Maintainer: Before pushing to CI
+
+```bash
+bash scripts/build-robust.sh                          # full validation build
+bash scripts/generate-sbom.sh                         # generate SBOM
+bash scripts/verify-image.sh python-sanity            # check Python packages
+bash scripts/package-release-artifacts.sh --image-name core-image-medtech
+bash scripts/verify-release-package.sh --image-name core-image-medtech
+```
