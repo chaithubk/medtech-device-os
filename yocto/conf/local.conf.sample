@@ -96,12 +96,13 @@ BB_STRICT_CHECKSUM = "1"
 # Abort when disk is critically low so workflow fails early and clearly
 BB_DISKMON_DIRS = "ABORT,${TMPDIR},100M,100K"
 
-# Hash equivalency server configuration.
-# Keep local hashserve enabled for OEEquivHash compatibility, and set the
-# upstream Yocto hash equivalence endpoint so mirror lookups can reuse unihash
-# mappings without triggering the local-hashserve/sstate-mirror warning.
+# Hash equivalency server — keep local hashserve running so Poky's OEEquivHash
+# class does not fail on parse, but do NOT set BB_HASHSERVE_UPSTREAM.
+# Adding an upstream endpoint causes BitBake to make a network round-trip to
+# hashserv.yoctoproject.org:8686 for every task before checking the sstate
+# mirror, which accumulates to ~1.5h of extra build time on a full image build.
+# The local hashserve runs in-process with no per-task network overhead.
 BB_HASHSERVE = "auto"
-BB_HASHSERVE_UPSTREAM = "hashserv.yoctoproject.org:8686"
 
 # Print failed task output in the terminal with enough context for CI triage
 BBINCLUDELOGS = "yes"
