@@ -38,14 +38,18 @@ It runs on GitHub-hosted Ubuntu 22.04 runners with a 360-minute job timeout.
 **Additionally on `main` branch push or `workflow_dispatch`:**
 11. Creates a GitHub Release with the QEMU bundle
 
+**If only `.github/workflows/` files changed (PR or push):**
+The full image build is skipped. The pipeline runs a lightweight YAML validation
+step instead, saving runner hours.
+
 ---
 
 ## Trigger Conditions
 
 | Event | What happens |
 |---|---|
-| Pull request to `main` | Full build + validation, no release |
-| Push to `main` | Full build + release tagged `latest` |
+| Pull request to `main` | Change detection → full build + validation, or YAML-only validation |
+| Push to `main` | Change detection → full build + semver release (`vX.Y.Z`), or YAML-only validation |
 | `workflow_dispatch` (manual) | Full build + prerelease tagged `dev-<sha>` |
 
 ---

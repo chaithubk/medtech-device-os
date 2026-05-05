@@ -45,9 +45,9 @@ ssh -p 2222 root@localhost
 # Password: root
 ```
 
-📖 **Full guide:** [docs/QUICK_START_USER.md](docs/QUICK_START_USER.md)
-📋 **Commands:** [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)
-🔧 **Troubleshooting:** [docs/DEPLOYMENT_TROUBLESHOOTING.md](docs/DEPLOYMENT_TROUBLESHOOTING.md)
+- 📖 **Full guide:** [docs/QUICK_START_USER.md](docs/QUICK_START_USER.md)
+- 📋 **Commands:** [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)
+- 🔧 **Troubleshooting:** [docs/DEPLOYMENT_TROUBLESHOOTING.md](docs/DEPLOYMENT_TROUBLESHOOTING.md)
 
 ---
 
@@ -81,9 +81,9 @@ Yocto environment setup automatically. See [`scripts/bitbake`](scripts/bitbake).
 bash scripts/run-qemu.sh
 ```
 
-📖 **Full guide:** [docs/QUICK_START_DEVELOPER.md](docs/QUICK_START_DEVELOPER.md)
-🏗 **Build options:** [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md)
-📦 **Layer structure:** [docs/LAYER_STRUCTURE.md](docs/LAYER_STRUCTURE.md)
+- 📖 **Full guide:** [docs/QUICK_START_DEVELOPER.md](docs/QUICK_START_DEVELOPER.md)
+- 🏗 **Build options:** [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md)
+- 📦 **Layer structure:** [docs/LAYER_STRUCTURE.md](docs/LAYER_STRUCTURE.md)
 
 ---
 
@@ -105,8 +105,8 @@ bash scripts/package-release-artifacts.sh --image-name core-image-medtech
 bash scripts/verify-release-package.sh --image-name core-image-medtech
 ```
 
-📖 **CI details:** [docs/CI_CD.md](docs/CI_CD.md)
-🚀 **Release process:** [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md)
+- 📖 **CI details:** [docs/CI_CD.md](docs/CI_CD.md)
+- 🚀 **Release process:** [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md)
 
 ---
 
@@ -128,7 +128,7 @@ mosquitto.service
               └── medtech-clinician-ui.service
 ```
 
-📖 **Full architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 📖 **Full architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---
 
@@ -150,7 +150,7 @@ yocto/meta-medtech/
 └── recipes-image/core-image-medtech/    # Image definition
 ```
 
-📖 **Layer guide:** [yocto/meta-medtech/README.md](yocto/meta-medtech/README.md)
+- 📖 **Layer guide:** [yocto/meta-medtech/README.md](yocto/meta-medtech/README.md)
 
 ---
 

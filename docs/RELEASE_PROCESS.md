@@ -44,12 +44,13 @@ payload/
 
 | Release type | Tag | When |
 |---|---|---|
-| Stable (production) | `latest` | Every push to `main` |
+| Stable (production) | `vMAJOR.MINOR.PATCH` | Every push to `main` |
 | Development (pre-release) | `dev-<sha>` | Manual `workflow_dispatch` runs |
 
-**Note:** The `latest` tag is updated (overwritten) on every successful `main`
-push. There is no semantic versioning at this stage. Future milestones may
-introduce `v1.0.0`-style tags.
+The patch component is **auto-incremented** from the most recent `vX.Y.Z` git
+tag on every successful `main` push, starting at `v0.1.0`. Each release gets a
+unique tag — **no artifacts are ever overwritten**. To bump major or minor
+versions, create a `vX.Y.0` tag manually in the repository before merging.
 
 ---
 
