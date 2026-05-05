@@ -12,7 +12,7 @@ env:
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
-  # ── 1. Detect whether all changes are non-build files (workflow, docs, markdown) ──
+  # ── 1. Detect whether all changes are non-build files (workflow, docs, markdown, shell) ──
   detect-changes:
     name: Detect Changed Files
     runs-on: ubuntu-22.04
@@ -51,9 +51,10 @@ jobs:
           #   .github/workflows/  — workflow definitions
           #   docs/               — documentation directory
           #   *.md at any level   — markdown files (README, TESTING, etc.)
+          #   *.sh at any level   — helper scripts
           if [[ -n "$CHANGED" ]]; then
             BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
-              '^(\.github/workflows/|docs/|[^/]+\.md$|.+\.md$)' || true)
+              '^(\.github/workflows/|docs/|[^/]+\.(md|sh)$|.+\.(md|sh)$)' || true)
             if [[ -z "$BUILD_AFFECTING" ]]; then
               SKIP_BUILD=true
             fi
