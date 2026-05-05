@@ -12,8 +12,90 @@ env:
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
+  # ── 1. Detect whether this run contains only workflow file changes ─────────
+  detect-changes:
+    name: Detect Changed Files
+    runs-on: ubuntu-22.04
+    outputs:
+      workflow_only: ${{ steps.check.outputs.workflow_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed files
+        id: check
+        run: |
+          WORKFLOW_ONLY=false
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
+                      || git diff --name-only HEAD~1 HEAD)
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            BEFORE="${{ github.event.before }}"
+            # All-zeros = initial push or force-push; treat as full build
+            if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+              CHANGED=""
+            else
+              CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}" 2>/dev/null || echo "")
+            fi
+          else
+            # workflow_dispatch — always full build
+            CHANGED=""
+          fi
+
+          echo "Changed files:"
+          echo "${CHANGED:-<none detected — assuming full build>}"
+
+          if [[ -n "$CHANGED" ]]; then
+            NON_WORKFLOW=$(echo "$CHANGED" | grep -v '^\.github/workflows/' || true)
+            if [[ -z "$NON_WORKFLOW" ]]; then
+              WORKFLOW_ONLY=true
+            fi
+          fi
+
+          echo "workflow_only=$WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
+          echo "Result: workflow_only=$WORKFLOW_ONLY"
+
+  # ── 2a. Workflow-only path: validate YAML, skip image build ───────────────
+  validate-yaml:
+    name: Validate Workflow YAML
+    needs: detect-changes
+    if: needs.detect-changes.outputs.workflow_only == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate workflow YAML files
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'PYEOF'
+          import yaml, sys, glob
+
+          errors = []
+          for path in sorted(
+              glob.glob(".github/workflows/*.yml") +
+              glob.glob(".github/workflows/*.yaml")
+          ):
+              try:
+                  with open(path) as fh:
+                      yaml.safe_load(fh)
+                  print(f"OK  {path}")
+              except yaml.YAMLError as exc:
+                  print(f"ERR {path}: {exc}")
+                  errors.append(path)
+
+          if errors:
+              print(f"\n{len(errors)} file(s) failed YAML validation.")
+              sys.exit(1)
+          print("\nAll workflow files are valid YAML.")
+          PYEOF
+
+  # ── 2b. Full image build path ─────────────────────────────────────────────
   build:
     name: Build Yocto Image
+    needs: detect-changes
+    if: needs.detect-changes.outputs.workflow_only == 'false'
     runs-on: ubuntu-22.04
     # GitHub-hosted runners cap a single job at 360 minutes.
     timeout-minutes: 360
@@ -22,6 +104,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required for semver tag lookup
 
       - name: Free up disk space on GitHub runner
         run: |
@@ -354,18 +438,30 @@ jobs:
 
 
       # === Create GitHub Release with QEMU artifacts ===
-      # push to main: tagged "latest" (stable release, overwrite previous latest)
-      # workflow_dispatch: tagged "dev-<sha>" as a prerelease regardless of branch,
-      #   so manual runs never overwrite the production "latest" tag.
+      # push to main:      semver tag vMAJOR.MINOR.PATCH (patch auto-incremented from latest git tag)
+      # workflow_dispatch: tagged "dev-<sha>" as a prerelease, never overwrites production releases.
+      # Each release gets a unique tag — no artifact overwriting.
 
-      - name: Compute release tag
+      - name: Compute semver release tag
         id: release_meta
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: |
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "tag=latest"          >> "$GITHUB_OUTPUT"
-            echo "prerelease=false"    >> "$GITHUB_OUTPUT"
-            echo "make_latest=true"    >> "$GITHUB_OUTPUT"
+            git fetch --tags --quiet
+            # Find the latest vX.Y.Z tag and bump the patch number.
+            LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+            if [[ -z "$LATEST" ]]; then
+              NEXT_TAG="v0.1.0"
+            else
+              MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+              MINOR=$(echo "$LATEST" | cut -d. -f2)
+              PATCH=$(echo "$LATEST" | cut -d. -f3)
+              NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+            fi
+            echo "Previous tag: ${LATEST:-<none>}  →  Next tag: $NEXT_TAG"
+            echo "tag=$NEXT_TAG"        >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"     >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"     >> "$GITHUB_OUTPUT"
           else
             echo "tag=dev-${{ github.sha }}" >> "$GITHUB_OUTPUT"
             echo "prerelease=true"           >> "$GITHUB_OUTPUT"
@@ -373,7 +469,7 @@ jobs:
           fi
 
       - name: Create GitHub Release with Artifacts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -383,6 +479,7 @@ jobs:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           body: |
             **Build Info**
+            - Version: ${{ steps.release_meta.outputs.tag }}
             - Commit: ${{ github.sha }}
             - Branch: ${{ github.ref_name }}
             - Image: core-image-medtech-qemuarm64
@@ -400,7 +497,6 @@ jobs:
           draft: false
           generate_release_notes: true
           make_latest: ${{ steps.release_meta.outputs.make_latest }}
-          allow_overwrite: true
 
       - name: Final disk report
         if: always()
