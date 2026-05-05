@@ -20,11 +20,12 @@ GTKDOC_ENABLED = "False"
 ENABLE_BINARY_LOCALE_GENERATION = "0"
 
 # Core runtime (small, production-relevant baseline only)
-# Removed: systemd-analyze (diagnostic only), openssh-sftp-server (SFTP not used)
+# Removed: systemd-analyze (diagnostic only), openssh-sftp-server (SFTP not used),
+#          curl (no runtime service depends on it; useful diagnostically but not
+#          worth the build time and image footprint in the production image).
 MEDTECH_CORE_PKGS = " \
     systemd \
     openssh \
-    curl \
 "
 
 # Python runtime for services
@@ -85,6 +86,7 @@ BAD_RECOMMENDATIONS:append = " \
     bash-completion \
     bluez5 \
     btrfs-tools \
+    curl \
     eudev-hwdb \
     git \
     gnutls \
@@ -94,7 +96,9 @@ BAD_RECOMMENDATIONS:append = " \
     libical \
     libmicrohttpd \
     mdadm \
+    mosquitto-clients \
     nfs-utils-client \
+    openssh-sftp-server \
     perl \
     ptest-runner \
     python3-pygobject \
@@ -113,9 +117,12 @@ BAD_RECOMMENDATIONS:append = " \
 # evaluate. Comment out a line if a build genuinely needs the package.
 PACKAGE_EXCLUDE += "\
     bluez5 \
+    curl \
     libical \
     libmicrohttpd \
+    mosquitto-clients \
     gnome-desktop-testing \
+    openssh-sftp-server \
     python3-pygobject \
     python3-dbus \
     qtwayland \

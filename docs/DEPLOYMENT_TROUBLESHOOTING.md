@@ -46,13 +46,50 @@ the first 20–40 seconds after boot.
 
 3. **Use the console instead** to log in directly while SSH starts:
    ```bash
-   bash scripts/download-and-run-qemu.sh --console
+   # Default mode is serial console — just run without --background
+   bash scripts/download-and-run-qemu.sh
    ```
 
 4. **Check if QEMU is actually running:**
    ```bash
    pgrep -l qemu-system
    ```
+
+---
+
+## SSH authentication failure (`Permission denied`)
+
+**Symptom:**
+```
+ssh -p 2222 root@localhost
+root@localhost's password:
+Permission denied (publickey,password).
+```
+
+**Cause:** The sshd configuration inside the VM is not allowing password-based
+root login.  This happens if the image was built without the
+`meta-medtech` OpenSSH policy drop-in
+(`/etc/ssh/sshd_config.d/10-medtech-dev.conf`).
+
+**Fix:** Rebuild the image from the current source — the `openssh_%.bbappend` in
+`yocto/meta-medtech/recipes-core/openssh/` installs the correct drop-in
+automatically.
+
+**Background — SSH policy in the QEMU/dev image:**
+
+The QEMU image uses a deliberately permissive SSH configuration so that the
+local developer workflow works out of the box:
+
+| Setting | Value | Rationale |
+|---|---|---|
+| `PermitRootLogin` | `yes` | QEMU guest is loopback-only; root console access is the primary path |
+| `PasswordAuthentication` | `yes` | Root password set deterministically via `EXTRA_USERS_PARAMS` |
+| `KbdInteractiveAuthentication` | `no` | Avoid double-prompt with PAM |
+| `UsePAM` | `yes` | Required for shadow password lookup |
+
+This is **only safe because the QEMU guest is reachable only on 127.0.0.1:2222**
+via QEMU user-mode networking.  For production images, replace this drop-in
+with a hardened configuration (key-only, non-root service account, etc.).
 
 ---
 

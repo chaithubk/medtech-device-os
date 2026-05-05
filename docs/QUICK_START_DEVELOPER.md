@@ -98,14 +98,33 @@ bash scripts/run-qemu.sh
 
 This launches QEMU with the just-built image. The terminal becomes the QEMU serial console.
 
-**Default login:**
+**Default login (serial console):**
 - Username: `root`
 - Password: `root`
 
 **SSH from another terminal on your host:**
 ```bash
 ssh -p 2222 root@localhost
+# Password: root
 ```
+
+**SCP file transfer:**
+```bash
+# Copy a file into the VM
+scp -P 2222 localfile.txt root@localhost:/tmp/
+
+# Copy a file out of the VM
+scp -P 2222 root@localhost:/etc/medtech-release ./
+```
+
+> **SSH access policy:** The image includes `/etc/ssh/sshd_config.d/10-medtech-dev.conf`
+> (installed by `openssh_%.bbappend` in `meta-medtech`) which enables
+> `PermitRootLogin yes` and `PasswordAuthentication yes`.  This is intentional for a
+> loopback-only QEMU guest.  The root password is set to `root` via `EXTRA_USERS_PARAMS`
+> in `medtech-image.bbclass`.  Change both for any production deployment.
+>
+> See [DEPLOYMENT_TROUBLESHOOTING.md](DEPLOYMENT_TROUBLESHOOTING.md) for the full SSH
+> policy rationale and hardening guidance.
 
 ---
 
