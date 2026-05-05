@@ -165,7 +165,7 @@ PACKAGECONFIG:remove:pn-qemu-native = "virglrenderer epoxy gtk+ sdl vnc spice us
 # Distro-wide BAD_RECOMMENDATIONS — also enforced in medtech-image.bbclass,
 # replicated here so non-medtech builds (e.g. core-image-minimal) benefit too.
 BAD_RECOMMENDATIONS:append = " bash-completion bluez5 btrfs-tools curl kbd mosquitto-clients \
-    openssh-sftp-server ptest-runner mdadm strace socat libical libmicrohttpd gnutls vala \
+    ptest-runner mdadm strace socat libical libmicrohttpd gnutls vala \
     python3-pygobject python3-dbus"
 
 # ============================================================

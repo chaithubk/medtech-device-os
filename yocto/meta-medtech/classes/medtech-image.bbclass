@@ -20,7 +20,7 @@ GTKDOC_ENABLED = "False"
 ENABLE_BINARY_LOCALE_GENERATION = "0"
 
 # Core runtime (small, production-relevant baseline only)
-# Removed: systemd-analyze (diagnostic only), openssh-sftp-server (SFTP not used),
+# Removed: systemd-analyze (diagnostic only),
 #          curl (no runtime service depends on it; useful diagnostically but not
 #          worth the build time and image footprint in the production image).
 MEDTECH_CORE_PKGS = " \
@@ -98,7 +98,6 @@ BAD_RECOMMENDATIONS:append = " \
     mdadm \
     mosquitto-clients \
     nfs-utils-client \
-    openssh-sftp-server \
     perl \
     ptest-runner \
     python3-pygobject \
@@ -122,7 +121,6 @@ PACKAGE_EXCLUDE += "\
     libmicrohttpd \
     mosquitto-clients \
     gnome-desktop-testing \
-    openssh-sftp-server \
     python3-pygobject \
     python3-dbus \
     qtwayland \
