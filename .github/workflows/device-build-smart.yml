@@ -12,12 +12,12 @@ env:
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
-  # ── 1. Detect whether this run contains only workflow file changes ─────────
+  # ── 1. Detect whether all changes are non-build files (workflow, docs, markdown) ──
   detect-changes:
     name: Detect Changed Files
     runs-on: ubuntu-22.04
     outputs:
-      workflow_only: ${{ steps.check.outputs.workflow_only }}
+      skip_build: ${{ steps.check.outputs.skip_build }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +26,7 @@ jobs:
       - name: Determine changed files
         id: check
         run: |
-          WORKFLOW_ONLY=false
+          SKIP_BUILD=false
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
@@ -47,21 +47,26 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
+          # Skip the image build when every changed file is in a non-build path:
+          #   .github/workflows/  — workflow definitions
+          #   docs/               — documentation directory
+          #   *.md at any level   — markdown files (README, TESTING, etc.)
           if [[ -n "$CHANGED" ]]; then
-            NON_WORKFLOW=$(echo "$CHANGED" | grep -v '^\.github/workflows/' || true)
-            if [[ -z "$NON_WORKFLOW" ]]; then
-              WORKFLOW_ONLY=true
+            BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
+              '^(\.github/workflows/|docs/|[^/]+\.md$|.+\.md$)' || true)
+            if [[ -z "$BUILD_AFFECTING" ]]; then
+              SKIP_BUILD=true
             fi
           fi
 
-          echo "workflow_only=$WORKFLOW_ONLY" >> "$GITHUB_OUTPUT"
-          echo "Result: workflow_only=$WORKFLOW_ONLY"
+          echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
+          echo "Result: skip_build=$SKIP_BUILD"
 
-  # ── 2a. Workflow-only path: validate YAML, skip image build ───────────────
+  # ── 2a. Non-build-affecting changes: validate YAML, skip image build ────────
   validate-yaml:
     name: Validate Workflow YAML
     needs: detect-changes
-    if: needs.detect-changes.outputs.workflow_only == 'true'
+    if: needs.detect-changes.outputs.skip_build == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +100,7 @@ jobs:
   build:
     name: Build Yocto Image
     needs: detect-changes
-    if: needs.detect-changes.outputs.workflow_only == 'false'
+    if: needs.detect-changes.outputs.skip_build == 'false'
     runs-on: ubuntu-22.04
     # GitHub-hosted runners cap a single job at 360 minutes.
     timeout-minutes: 360
