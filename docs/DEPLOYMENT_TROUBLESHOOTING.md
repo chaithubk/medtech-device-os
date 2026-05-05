@@ -46,7 +46,7 @@ the first 20–40 seconds after boot.
 
 3. **Use the console instead** to log in directly while SSH starts:
    ```bash
-   # Default mode is serial console — just run without --background
+   # The default mode (no flags) attaches the serial console to your terminal:
    bash scripts/download-and-run-qemu.sh
    ```
 

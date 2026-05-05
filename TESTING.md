@@ -152,7 +152,7 @@ cat medtech-release
 ### Test 1.9: No-wait-ssh mode
 
 ```bash
-bash scripts/download-and-run-qemu.sh --background --no-wait-ssh &
+bash scripts/download-and-run-qemu.sh --background --no-wait-ssh
 ```
 
 **Expected:**

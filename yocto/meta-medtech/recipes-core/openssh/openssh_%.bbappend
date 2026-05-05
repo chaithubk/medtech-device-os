@@ -21,7 +21,7 @@ SRC_URI:append = " file://medtech-dev-sshd.conf"
 
 do_install:append() {
     install -d ${D}${sysconfdir}/ssh/sshd_config.d
-    install -m 0600 ${WORKDIR}/medtech-dev-sshd.conf \
+    install -m 0644 ${WORKDIR}/medtech-dev-sshd.conf \
         ${D}${sysconfdir}/ssh/sshd_config.d/10-medtech-dev.conf
 }
 
