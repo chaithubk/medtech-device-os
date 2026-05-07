@@ -94,6 +94,7 @@ cd yocto
 git clone -b kirkstone --depth 1 https://git.yoctoproject.org/git/poky poky
 git clone -b kirkstone --depth 1 https://github.com/openembedded/meta-openembedded.git meta-openembedded
 git clone -b 6.4 --depth 1 https://code.qt.io/yocto/meta-qt6.git meta-qt6
+git clone -b kirkstone --depth 1 https://github.com/TimesysGit/meta-timesys.git meta-timesys
 ```
 
 ### 4. Initialize build environment

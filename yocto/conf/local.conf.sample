@@ -80,6 +80,9 @@ ENABLE_BINARY_LOCALE_GENERATION = "0"
 INHERIT += "rm_work"
 RM_WORK_EXCLUDE += "core-image-medtech"
 
+# Timesys Vigiles SBOM assessment (free tier)
+INHERIT += "vigiles"
+
 # Keep git fetches shallow where supported
 BB_GIT_SHALLOW = "1"
 BB_GIT_SHALLOW_DEPTH = "1"
@@ -173,4 +176,3 @@ BAD_RECOMMENDATIONS:append = " bash-completion bluez5 btrfs-tools curl kbd mosqu
 # ============================================================
 INHERIT += "buildhistory"
 BUILDHISTORY_COMMIT = "0"
-

@@ -96,6 +96,7 @@ bblayers_ready() {
         && grep -Fq '${TOPDIR}/../meta-openembedded/meta-python' "$file" \
         && grep -Fq '${TOPDIR}/../meta-openembedded/meta-networking' "$file" \
         && grep -Fq '${TOPDIR}/../meta-qt6' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-timesys' "$file" \
         && grep -Fq '${TOPDIR}/../meta-medtech' "$file"
 }
 
@@ -103,6 +104,7 @@ ensure_local_build_setup() {
     if [ ! -f "$OE_INIT" ] \
         || [ ! -d "$PROJECT_ROOT/yocto/meta-openembedded" ] \
         || [ ! -d "$PROJECT_ROOT/yocto/meta-qt6" ] \
+        || [ ! -d "$PROJECT_ROOT/yocto/meta-timesys" ] \
         || [ ! -f "$BUILD_DIR/conf/local.conf" ] \
         || ! bblayers_ready; then
         bash "$PROJECT_ROOT/scripts/quick-setup.sh" >/dev/null

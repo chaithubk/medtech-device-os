@@ -197,6 +197,13 @@ jobs:
               https://github.com/meta-qt6/meta-qt6.git meta-qt6
           du -sh meta-qt6
 
+      - name: Clone meta-timesys
+        run: |
+          cd yocto
+          git clone -b kirkstone --depth 1 \
+            https://github.com/TimesysGit/meta-timesys.git meta-timesys
+          du -sh meta-timesys
+
       - name: Initialize build directory
         run: |
           cd yocto
@@ -229,6 +236,21 @@ jobs:
             echo "CRITICAL: Less than 5 GB available; build will fail."
             exit 1
           fi
+
+      - name: Configure Vigiles key file
+        env:
+          VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
+        run: |
+          if [[ -z "${VIGILES_KEY_DATA}" ]]; then
+            echo "Missing required secret: VIGILES_KEY_DATA"
+            exit 1
+          fi
+
+          KEY_FILE="$(mktemp "${RUNNER_TEMP}/vigiles-key-XXXXXX")"
+          printf '%s' "${VIGILES_KEY_DATA}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+          echo "VIGILES_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
+          echo "Vigiles key file configured"
 
       - name: Yocto preflight (fast-fail metadata and URI checks)
         run: |
@@ -507,5 +529,8 @@ jobs:
       - name: Final disk report
         if: always()
         run: |
+          if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
+            rm -f "${VIGILES_KEY_FILE}"
+          fi
           echo "=== FINAL DISK STATUS ==="
           df -h / | tail -1
