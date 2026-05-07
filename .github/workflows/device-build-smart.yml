@@ -526,11 +526,15 @@ jobs:
           generate_release_notes: true
           make_latest: ${{ steps.release_meta.outputs.make_latest }}
 
-      - name: Final disk report
+      - name: Cleanup Vigiles key file
         if: always()
         run: |
           if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
             rm -f "${VIGILES_KEY_FILE}"
           fi
+
+      - name: Final disk report
+        if: always()
+        run: |
           echo "=== FINAL DISK STATUS ==="
           df -h / | tail -1
