@@ -5,6 +5,9 @@ PV = "1.0"
 
 inherit systemd
 
+MEDTECH_VITALS_SCHEMA_FILENAME = "v2.0.json"
+MEDTECH_VITALS_CONTRACT_VERSION = "v2.0.0"
+
 SRC_URI += " \
     file://medtech-system.conf \
     git://github.com/chaithubk/medtech-telemetry-contract.git;protocol=https;branch=main;destsuffix=telemetry-contract \
@@ -32,10 +35,10 @@ do_install() {
 
     # Install centralized vitals telemetry contract files
     install -d ${D}${datadir}/medtech/contracts/vitals
-    install -m 0644 ${WORKDIR}/telemetry-contract/schemas/vitals/v2.0.json \
-        ${D}${datadir}/medtech/contracts/vitals/v2.0.json
-    ln -sf v2.0.json ${D}${datadir}/medtech/contracts/vitals/current.json
-    printf "v2.0.0\n" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
+    install -m 0644 ${WORKDIR}/telemetry-contract/schemas/vitals/${MEDTECH_VITALS_SCHEMA_FILENAME} \
+        ${D}${datadir}/medtech/contracts/vitals/${MEDTECH_VITALS_SCHEMA_FILENAME}
+    ln -sf ${MEDTECH_VITALS_SCHEMA_FILENAME} ${D}${datadir}/medtech/contracts/vitals/current.json
+    printf "%s\n" "${MEDTECH_VITALS_CONTRACT_VERSION}" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
 }
 
 FILES:${PN} = " \

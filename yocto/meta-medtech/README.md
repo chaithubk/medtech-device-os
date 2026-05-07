@@ -149,9 +149,11 @@ on-device ML inference.
 When bumping the vitals telemetry contract version used on the device rootfs:
 
 1. Update `SRCREV` in `recipes-core/medtech-system/medtech-system.bb` to the pinned commit for the target contract tag.
-2. Update the installed schema filename/path in `do_install()` (for example `v2.0.json` -> `v2.1.json`).
+2. Update `MEDTECH_VITALS_SCHEMA_FILENAME` (for example `v2.0.json` -> `v2.1.json`).
 3. Update the `current.json` symlink target.
-4. Update `/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION` content.
+4. Update `MEDTECH_VITALS_CONTRACT_VERSION` and `/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION` content.
+
+Note: schema filenames use major/minor (`v2.0.json`), while `VITALS_CONTRACT_VERSION` is full semver (`v2.0.0`).
 
 ---
 
