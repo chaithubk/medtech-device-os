@@ -5,7 +5,8 @@ PV = "1.0"
 
 inherit systemd
 
-SRCREV = "c337d89452b23b3cb7460941364fc1b2255837c9" # medtech-telemetry-contract v2.0.0 tag
+# medtech-telemetry-contract v2.0.0 tag
+SRCREV = "c337d89452b23b3cb7460941364fc1b2255837c9"
 SRC_URI = " \
     git://github.com/chaithubk/medtech-telemetry-contract.git;protocol=https;nobranch=1 \
     file://medtech-system.conf \
