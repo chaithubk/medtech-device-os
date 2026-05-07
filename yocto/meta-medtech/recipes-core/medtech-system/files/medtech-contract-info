@@ -8,6 +8,7 @@ schema_link="/usr/share/medtech/contracts/vitals/current.json"
 echo "Contract version file: ${version_file}"
 contract_version="<missing>"
 if [ -r "${version_file}" ]; then
+    # read may return non-zero on EOF without trailing newline; keep captured value.
     IFS= read -r contract_version < "${version_file}" || true
     if [ -z "${contract_version}" ]; then
         contract_version="<missing>"
