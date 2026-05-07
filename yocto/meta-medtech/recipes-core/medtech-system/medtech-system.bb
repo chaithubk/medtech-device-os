@@ -5,13 +5,13 @@ PV = "1.0"
 
 inherit systemd
 
-SRCREV = "c337d89452b23b3cb7460941364fc1b2255837c9"
+SRCREV = "c337d89452b23b3cb7460941364fc1b2255837c9" # medtech-telemetry-contract v2.0.0 tag
 SRC_URI = " \
     git://github.com/chaithubk/medtech-telemetry-contract.git;protocol=https;branch=main \
     file://medtech-system.conf \
     file://medtech-contract-info \
 "
-VITALS_SCHEMA_VERSION = "2.0"
+VITALS_SCHEMA_VERSION = "v2.0"
 VITALS_CONTRACT_VERSION = "v2.0"
 
 # Runtime dependencies shared by all medtech services
@@ -31,8 +31,8 @@ do_install() {
     install -d ${D}${bindir}
 
     # Install pinned telemetry contract schema and canonical link
-    install -m 0644 ${S}/schemas/vitals/v${VITALS_SCHEMA_VERSION}.json ${D}${datadir}/medtech/contracts/vitals/v${VITALS_SCHEMA_VERSION}.json
-    ln -sf v${VITALS_SCHEMA_VERSION}.json ${D}${datadir}/medtech/contracts/vitals/current.json
+    install -m 0644 ${S}/schemas/vitals/${VITALS_SCHEMA_VERSION}.json ${D}${datadir}/medtech/contracts/vitals/${VITALS_SCHEMA_VERSION}.json
+    ln -sf ${VITALS_SCHEMA_VERSION}.json ${D}${datadir}/medtech/contracts/vitals/current.json
     printf "%s\n" "${VITALS_CONTRACT_VERSION}" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
 
     # Install tmpfiles.d config to create /var/log/medtech at boot
