@@ -98,31 +98,68 @@ sleep 15
 - [ ] Within 15 seconds, see `medtech/vitals/latest` messages
 - [ ] Within 20 seconds, see `medtech/predictions/sepsis` messages
 
-### Test 1.6: Console mode
+### Test 1.6: Console mode (serial)
+
+The default mode attaches the serial console to your terminal. Simply run without
+`--background`:
 
 ```bash
 # In a new terminal (kill any running QEMU first)
-bash scripts/download-and-run-qemu.sh --console
+bash scripts/download-and-run-qemu.sh
 ```
 
 **Expected:**
 - [ ] Terminal is connected to QEMU serial console
 - [ ] Boot messages appear
-- [ ] Login prompt appears
+- [ ] Login prompt appears (`root` / password `root`)
 - [ ] Ctrl+A then X exits QEMU
 
-### Test 1.7: No-wait-ssh mode
+### Test 1.7: SSH login
 
 ```bash
-bash scripts/download-and-run-qemu.sh --no-wait-ssh &
+# After the VM has booted (wait for login prompt or the "SSH daemon is responding" message):
+ssh -p 2222 root@localhost
+# Password: root
+```
+
+**Expected:**
+- [ ] SSH connects without error
+- [ ] Shell prompt is shown inside the VM
+
+> **Why SSH works:** `medtech-image.bbclass` sets a SHA-512 hashed root password via
+> `EXTRA_USERS_PARAMS`.  An `openssh_%.bbappend` in `meta-medtech` installs
+> `/etc/ssh/sshd_config.d/10-medtech-dev.conf`, which sets `PermitRootLogin yes` and
+> `PasswordAuthentication yes`.  This is intentionally permissive for the loopback-only
+> QEMU guest; it is not suitable for production images.
+
+### Test 1.8: SCP file transfer
+
+```bash
+# Copy a file into the VM
+echo "test" > /tmp/medtech-test.txt
+scp -P 2222 /tmp/medtech-test.txt root@localhost:/tmp/
+# Password: root
+
+# Copy a file out of the VM
+scp -P 2222 root@localhost:/etc/medtech-release ./
+cat medtech-release
+```
+
+**Expected:**
+- [ ] SCP transfer completes without error
+- [ ] File appears at the destination
+
+### Test 1.9: No-wait-ssh mode
+
+```bash
+bash scripts/download-and-run-qemu.sh --background --no-wait-ssh
 ```
 
 **Expected:**
 - [ ] QEMU boots without the SSH wait loop
-- [ ] "(SSH wait skipped — --no-wait-ssh flag set)" message appears
 - [ ] QEMU continues running in background
 
-### Test 1.8: Dry-run mode
+### Test 1.10: Dry-run mode
 
 ```bash
 bash scripts/download-and-run-qemu.sh --dry-run
