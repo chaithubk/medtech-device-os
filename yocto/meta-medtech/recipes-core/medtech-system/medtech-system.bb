@@ -5,7 +5,12 @@ PV = "1.0"
 
 inherit systemd
 
-SRC_URI += "file://medtech-system.conf"
+SRCREV = "c337d89452b23b3cb7460941364fc1b2255837c9"
+SRC_URI = " \
+    git://github.com/chaithubk/medtech-telemetry-contract.git;protocol=https;branch=main \
+    file://medtech-system.conf \
+    file://medtech-contract-info \
+"
 
 # Runtime dependencies shared by all medtech services
 RDEPENDS:${PN} = " \
@@ -13,22 +18,30 @@ RDEPENDS:${PN} = " \
     mosquitto \
 "
 
-S = "${WORKDIR}"
-
 do_install() {
     # Create medtech directory layout
     install -d ${D}/opt/medtech
     install -d ${D}/opt/medtech/models
     install -d ${D}/etc/medtech
+    install -d ${D}${datadir}/medtech/contracts/vitals
+    install -d ${D}${bindir}
+
+    # Install pinned telemetry contract schema and canonical link
+    install -m 0644 ${WORKDIR}/git/schemas/vitals/v2.0.json ${D}${datadir}/medtech/contracts/vitals/v2.0.json
+    ln -sf v2.0.json ${D}${datadir}/medtech/contracts/vitals/current.json
+    printf "v2.0.0\n" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
 
     # Install tmpfiles.d config to create /var/log/medtech at boot
     # (do NOT pre-create /var/volatile dirs — they must be empty in the image)
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${WORKDIR}/medtech-system.conf ${D}${sysconfdir}/tmpfiles.d/medtech-system.conf
+    install -m 0755 ${WORKDIR}/medtech-contract-info ${D}${bindir}/medtech-contract-info
 }
 
 FILES:${PN} = " \
     /opt/medtech \
     /etc/medtech \
+    ${datadir}/medtech/contracts \
+    ${bindir}/medtech-contract-info \
     ${sysconfdir}/tmpfiles.d/medtech-system.conf \
 "
