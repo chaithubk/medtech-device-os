@@ -87,6 +87,10 @@ meta-medtech/
 Installs the base system configuration:
 - `/etc/medtech-release` — build version, machine name, timestamp
 - Any OS-level tweaks required by the medtech platform
+- Centralized telemetry contract files:
+  - `/usr/share/medtech/contracts/vitals/v2.0.json`
+  - `/usr/share/medtech/contracts/vitals/current.json` -> `v2.0.json`
+  - `/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION`
 
 ### `core-image-medtech` (recipes-image)
 
@@ -139,6 +143,15 @@ by the vitals publisher.
 
 TensorFlow Lite 2.14.0 for ARM64. Used by the edge analytics service for
 on-device ML inference.
+
+### Vitals Contract Update Procedure
+
+When bumping the vitals telemetry contract version used on the device rootfs:
+
+1. Update `SRCREV` in `recipes-core/medtech-system/medtech-system.bb` to the pinned commit for the target contract tag.
+2. Update the installed schema filename/path in `do_install()` (for example `v2.0.json` -> `v2.1.json`).
+3. Update the `current.json` symlink target.
+4. Update `/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION` content.
 
 ---
 
