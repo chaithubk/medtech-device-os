@@ -86,6 +86,9 @@ meta-medtech/
 
 Installs the base system configuration:
 - `/etc/medtech-release` — build version, machine name, timestamp
+- `/usr/share/medtech/contracts/vitals/v2.0.json` with `current.json` symlink
+- `/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION`
+- `/usr/bin/medtech-contract-info` for on-device contract diagnostics
 - Any OS-level tweaks required by the medtech platform
 
 ### `core-image-medtech` (recipes-image)
