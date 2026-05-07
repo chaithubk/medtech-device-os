@@ -41,6 +41,8 @@ if [ -n "${resolved_path}" ] && [ -f "${resolved_path}" ]; then
         hash_output="$(sha256sum "${resolved_path}")"
         hash_value="${hash_output%% *}"
         echo "Schema sha256: ${hash_value}"
+    else
+        echo "Schema sha256: <sha256sum unavailable>"
     fi
     size_bytes="$(wc -c < "${resolved_path}" | tr -d ' ')"
     echo "Schema size bytes: ${size_bytes}"
