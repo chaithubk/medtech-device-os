@@ -6,10 +6,9 @@ version_file="/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION"
 schema_link="/usr/share/medtech/contracts/vitals/current.json"
 
 echo "Contract version file: ${version_file}"
+contract_version="<missing>"
 if [ -r "${version_file}" ]; then
-    contract_version="$(tr -d '\r\n' < "${version_file}")"
-else
-    contract_version="<missing>"
+    IFS= read -r contract_version < "${version_file}" || contract_version="<missing>"
 fi
 echo "Installed contract version: ${contract_version}"
 
