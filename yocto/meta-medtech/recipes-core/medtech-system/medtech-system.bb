@@ -7,7 +7,7 @@ inherit systemd
 
 SRCREV = "c337d89452b23b3cb7460941364fc1b2255837c9" # medtech-telemetry-contract v2.0.0 tag
 SRC_URI = " \
-    git://github.com/chaithubk/medtech-telemetry-contract.git;protocol=https;branch=main \
+    git://github.com/chaithubk/medtech-telemetry-contract.git;protocol=https;nobranch=1 \
     file://medtech-system.conf \
     file://medtech-contract-info \
 "
