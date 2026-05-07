@@ -35,7 +35,8 @@ fi
 
 if [ -n "${resolved_path}" ] && [ -f "${resolved_path}" ]; then
     if command -v sha256sum >/dev/null 2>&1; then
-        hash_value="$(sha256sum "${resolved_path}" | awk '{print $1}')"
+        hash_output="$(sha256sum "${resolved_path}")"
+        hash_value="${hash_output%% *}"
         echo "Schema sha256: ${hash_value}"
     fi
     size_bytes="$(wc -c < "${resolved_path}" | tr -d ' ')"

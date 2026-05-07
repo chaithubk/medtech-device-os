@@ -11,6 +11,8 @@ SRC_URI = " \
     file://medtech-system.conf \
     file://medtech-contract-info \
 "
+VITALS_SCHEMA_VERSION = "2.0"
+VITALS_CONTRACT_VERSION = "v2.0"
 
 # Runtime dependencies shared by all medtech services
 RDEPENDS:${PN} = " \
@@ -29,9 +31,9 @@ do_install() {
     install -d ${D}${bindir}
 
     # Install pinned telemetry contract schema and canonical link
-    install -m 0644 ${S}/schemas/vitals/v2.0.json ${D}${datadir}/medtech/contracts/vitals/v2.0.json
-    ln -sf v2.0.json ${D}${datadir}/medtech/contracts/vitals/current.json
-    printf "v2.0.0\n" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
+    install -m 0644 ${S}/schemas/vitals/v${VITALS_SCHEMA_VERSION}.json ${D}${datadir}/medtech/contracts/vitals/v${VITALS_SCHEMA_VERSION}.json
+    ln -sf v${VITALS_SCHEMA_VERSION}.json ${D}${datadir}/medtech/contracts/vitals/current.json
+    printf "%s\n" "${VITALS_CONTRACT_VERSION}" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
 
     # Install tmpfiles.d config to create /var/log/medtech at boot
     # (do NOT pre-create /var/volatile dirs — they must be empty in the image)
