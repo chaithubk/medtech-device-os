@@ -18,6 +18,8 @@ RDEPENDS:${PN} = " \
     mosquitto \
 "
 
+S = "${WORKDIR}/git"
+
 do_install() {
     # Create medtech directory layout
     install -d ${D}/opt/medtech
@@ -27,7 +29,7 @@ do_install() {
     install -d ${D}${bindir}
 
     # Install pinned telemetry contract schema and canonical link
-    install -m 0644 ${WORKDIR}/git/schemas/vitals/v2.0.json ${D}${datadir}/medtech/contracts/vitals/v2.0.json
+    install -m 0644 ${S}/schemas/vitals/v2.0.json ${D}${datadir}/medtech/contracts/vitals/v2.0.json
     ln -sf v2.0.json ${D}${datadir}/medtech/contracts/vitals/current.json
     printf "v2.0.0\n" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
 
