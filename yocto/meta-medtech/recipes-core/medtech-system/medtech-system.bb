@@ -33,6 +33,7 @@ do_install() {
     # Install pinned telemetry contract schema and canonical link
     install -m 0644 ${S}/schemas/vitals/${VITALS_SCHEMA_FILE} ${D}${datadir}/medtech/contracts/vitals/${VITALS_SCHEMA_FILE}
     ln -sf ${VITALS_SCHEMA_FILE} ${D}${datadir}/medtech/contracts/vitals/current.json
+    install -m 0644 /dev/null ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
     printf "%s\n" "${VITALS_CONTRACT_VERSION}" > ${D}${datadir}/medtech/contracts/VITALS_CONTRACT_VERSION
 
     # Install tmpfiles.d config to create /var/log/medtech at boot
