@@ -6,6 +6,11 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to use (e.g. v1.2.0). Leave blank to auto-increment from the latest git tag.'
+        required: false
+        default: ''
 
 env:
   CI_BUILD_IMAGE: core-image-medtech
@@ -452,9 +457,15 @@ jobs:
         id: release_meta
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+          MANUAL_VERSION="${{ github.event.inputs.version }}"
+
+          if [[ -n "$MANUAL_VERSION" ]]; then
+            # Explicit version provided via workflow_dispatch input.
+            NEXT_TAG="$MANUAL_VERSION"
+            echo "Using manually specified version: $NEXT_TAG"
+          else
+            # Auto-increment from the latest vX.Y.Z git tag (push to main or blank dispatch).
             git fetch --tags --quiet
-            # Find the latest vX.Y.Z tag and bump the patch number.
             LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
             if [[ -z "$LATEST" ]]; then
               NEXT_TAG="v0.1.0"
@@ -465,14 +476,11 @@ jobs:
               NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
             fi
             echo "Previous tag: ${LATEST:-<none>}  →  Next tag: $NEXT_TAG"
-            echo "tag=$NEXT_TAG"        >> "$GITHUB_OUTPUT"
-            echo "prerelease=false"     >> "$GITHUB_OUTPUT"
-            echo "make_latest=true"     >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=dev-${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true"           >> "$GITHUB_OUTPUT"
-            echo "make_latest=false"         >> "$GITHUB_OUTPUT"
           fi
+
+          echo "tag=$NEXT_TAG"    >> "$GITHUB_OUTPUT"
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          echo "make_latest=true" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release with Artifacts
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
