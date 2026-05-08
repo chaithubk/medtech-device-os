@@ -1,0 +1,226 @@
+name: On-demand Core Image Minimal Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      machine:
+        description: "Yocto MACHINE to build"
+        required: true
+        default: "qemuarm64"
+      extra_local_conf:
+        description: "Optional local.conf lines (one per line) for trimming experiments"
+        required: false
+        default: ""
+
+env:
+  CI_BUILD_IMAGE: core-image-minimal
+  GIT_TERMINAL_PROMPT: "0"
+
+jobs:
+  build-minimal:
+    name: Build core-image-minimal
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Free up disk space on GitHub runner
+        run: |
+          echo "=== BEFORE CLEANUP ==="
+          df -h / | head -2
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /opt/hostedtoolcache/PyPy
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf /opt/hostedtoolcache/Python
+          sudo rm -rf /opt/hostedtoolcache/stack
+
+          sudo docker image prune -af
+          sudo docker container prune -f
+          sudo docker volume prune -f
+
+          sudo apt-get purge -y llvm-* gcc-* g++ gfortran-* mingw-* golang ruby ruby-* \
+            php* dotnet-* powershell mono-* mysql-* postgresql-* 2>/dev/null || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+          sudo systemctl stop snapd || true
+          sudo snap remove --purge amazon-linux-agent 2>/dev/null || true
+          sudo snap remove --purge lxd 2>/dev/null || true
+          sudo snap remove --purge core20 2>/dev/null || true
+          sudo snap remove --purge snapd 2>/dev/null || true
+          sudo rm -rf /var/lib/snapd /snap
+
+          echo ""
+          echo "=== AFTER CLEANUP ==="
+          df -h / | head -2
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gawk wget git diffstat unzip texinfo gcc g++ build-essential \
+            chrpath socat cpio python3 python3-pip python3-pexpect \
+            xz-utils debianutils iputils-ping curl file locales \
+            autoconf automake libtool pkg-config gettext \
+            patch perl bison flex gperf \
+            qemu-system-arm qemu-system-x86 qemu-user-static
+          echo "Build environment ready"
+
+      - name: Clone Poky kirkstone (shallow)
+        run: |
+          mkdir -p yocto
+          cd yocto
+          git clone -b kirkstone --depth 1 https://git.yoctoproject.org/git/poky poky
+
+      - name: Clone meta-openembedded (keep essential sublayers only)
+        run: |
+          cd yocto
+          git clone -b kirkstone --depth 1 \
+            https://github.com/openembedded/meta-openembedded.git meta-openembedded
+
+          find meta-openembedded -mindepth 1 -maxdepth 1 -type d \
+            ! -name meta-oe \
+            ! -name meta-python \
+            ! -name meta-networking \
+            -exec rm -rf {} +
+
+      - name: Clone meta-qt6
+        run: |
+          cd yocto
+          git clone -b 6.4 --depth 1 \
+            https://code.qt.io/yocto/meta-qt6.git meta-qt6 \
+            || git clone -b 6.4 --depth 1 \
+              https://github.com/meta-qt6/meta-qt6.git meta-qt6
+
+      - name: Clone meta-timesys
+        run: |
+          cd yocto
+          git clone -b kirkstone --depth 1 \
+            https://github.com/TimesysGit/meta-timesys.git meta-timesys
+
+      - name: Configure Vigiles key file
+        env:
+          VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
+        run: |
+          if [[ -z "${VIGILES_KEY_DATA}" ]]; then
+            echo "Missing required secret: VIGILES_KEY_DATA"
+            exit 1
+          fi
+
+          KEY_FILE="$(mktemp "${RUNNER_TEMP}/vigiles-key-XXXXXX")"
+          printf '%s' "${VIGILES_KEY_DATA}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+          echo "VIGILES_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
+          echo "Vigiles key file configured"
+
+      - name: Initialize build directory
+        run: |
+          cd yocto
+          source poky/oe-init-build-env build > /dev/null 2>&1
+          cp ../conf/local.conf.sample conf/local.conf
+          cp ../conf/bblayers.conf.sample conf/bblayers.conf
+
+          {
+            echo ""
+            echo "# On-demand minimal image tuning"
+            echo "MACHINE = \"${{ github.event.inputs.machine }}\""
+            echo "INHERIT += \"rm_work\""
+          } >> conf/local.conf
+
+          if [[ -n "${{ github.event.inputs.extra_local_conf }}" ]]; then
+            echo "" >> conf/local.conf
+            echo "# User-provided local.conf overrides" >> conf/local.conf
+            printf '%s\n' "${{ github.event.inputs.extra_local_conf }}" >> conf/local.conf
+          fi
+
+          echo "Build directory initialized"
+
+      - name: Yocto preflight (metadata parse)
+        run: |
+          cd yocto/build
+          source ../poky/oe-init-build-env . > /dev/null 2>&1
+          bitbake -p
+
+      - name: Build minimal image
+        run: |
+          cd yocto/build
+          source ../poky/oe-init-build-env . > /dev/null 2>&1
+
+          set -o pipefail
+          : > build.log
+          echo "=== BITBAKE BUILD: ${CI_BUILD_IMAGE} ===" | tee -a build.log
+          bitbake -k "${CI_BUILD_IMAGE}" 2>&1 | tee -a build.log
+
+      - name: Collect Timesys Vigiles vulnerability report
+        run: |
+          MACHINE="${{ github.event.inputs.machine }}"
+          mkdir -p artifacts/vigiles
+
+          mapfile -t REPORTS < <(find yocto/build/tmp/deploy -type f \
+            \( -iname '*vigiles*' -o -iname '*timesys*' -o -iname '*vuln*' -o -iname '*cve*' \) \
+            \( -iname '*.json' -o -iname '*.csv' -o -iname '*.txt' -o -iname '*.xml' -o -iname '*.html' \) \
+            2>/dev/null | sort)
+
+          if [[ ${#REPORTS[@]} -eq 0 ]]; then
+            echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy"
+            echo "Check that conf/local.conf includes: INHERIT += \"vigiles\""
+            echo "And verify the VIGILES_KEY_DATA secret contains a valid key payload."
+            exit 1
+          fi
+
+          for report in "${REPORTS[@]}"; do
+            cp --parents "${report}" artifacts/vigiles/
+          done
+
+          printf '%s\n' "${REPORTS[@]}" > "artifacts/vigiles/core-image-minimal-${MACHINE}-vigiles-report-files.txt"
+          echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
+
+      - name: Export package inventory
+        run: |
+          mkdir -p artifacts
+          MACHINE="${{ github.event.inputs.machine }}"
+          MANIFEST="yocto/build/tmp/deploy/images/${MACHINE}/${CI_BUILD_IMAGE}-${MACHINE}.manifest"
+
+          if [[ ! -f "${MANIFEST}" ]]; then
+            echo "Manifest not found: ${MANIFEST}"
+            exit 1
+          fi
+
+          cp "${MANIFEST}" artifacts/core-image-minimal-${MACHINE}.manifest
+          cp yocto/build/build.log artifacts/build.log
+
+          awk '{print $1}' "${MANIFEST}" | sort -u > artifacts/core-image-minimal-${MACHINE}-packages.txt
+
+          {
+            echo "image=${CI_BUILD_IMAGE}"
+            echo "machine=${MACHINE}"
+            echo "package_count=$(wc -l < artifacts/core-image-minimal-${MACHINE}-packages.txt)"
+            echo "manifest_path=${MANIFEST}"
+          } > artifacts/core-image-minimal-${MACHINE}-summary.txt
+
+          ls -lh artifacts
+
+      - name: Upload minimal image analysis artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-image-minimal-analysis
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Cleanup Vigiles key file
+        if: always()
+        run: |
+          if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
+            rm -f "${VIGILES_KEY_FILE}"
+          fi
