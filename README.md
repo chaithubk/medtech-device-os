@@ -64,7 +64,7 @@ ssh -p 2222 root@localhost
 Ctrl+Shift+P → Dev Containers: Reopen in Container
 ```
 
-Setup runs automatically (`quick-setup.sh` clones Yocto layers and initializes the build config).
+Setup runs automatically (`quick-setup.sh` clones Yocto layers, including meta-timesys, and initializes the build config).
 
 ### 2. Build
 

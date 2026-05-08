@@ -5,6 +5,7 @@ yocto/build/conf/*
 yocto/poky/
 yocto/meta-openembedded/
 yocto/meta-qt6/
+yocto/meta-timesys/
 yocto/downloads/
 yocto/sstate-cache/
 *.bbappend~

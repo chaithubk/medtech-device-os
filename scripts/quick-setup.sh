@@ -16,6 +16,7 @@ bblayers_needs_refresh() {
         && grep -Fq '${TOPDIR}/../meta-openembedded/meta-python' "$file" \
         && grep -Fq '${TOPDIR}/../meta-openembedded/meta-networking' "$file" \
         && grep -Fq '${TOPDIR}/../meta-qt6' "$file" \
+        && grep -Fq '${TOPDIR}/../meta-timesys' "$file" \
         && grep -Fq '${TOPDIR}/../meta-medtech' "$file"
 }
 
@@ -79,6 +80,14 @@ if ! grep -q '^QT_GIT_PROTOCOL = "https"' conf/local.conf; then
 # Local-only: keep git:// URL form for bitbake git fetcher, but force
 # transport over HTTPS to avoid blocked git:// traffic.
 QT_GIT_PROTOCOL = "https"
+EOF
+fi
+
+if ! grep -Eq '(^|\s)INHERIT\s*\+\=\s*"[^"]*\bvigiles\b' conf/local.conf; then
+    cat <<'EOF' >> conf/local.conf
+
+# Timesys Vigiles SBOM assessment (free tier)
+INHERIT += "vigiles"
 EOF
 fi
 

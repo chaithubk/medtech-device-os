@@ -102,6 +102,12 @@ if ! clone_with_retry \
     }
 fi
 
+# meta-timesys (Vigiles SBOM assessment layer)
+clone_with_retry \
+    "meta-timesys" \
+    "https://github.com/TimesysGit/meta-timesys.git" \
+    "kirkstone"
+
 # meta-medtech (our custom layer — already in the workspace checkout)
 if [ ! -d "$YOCTO_DIR/meta-medtech" ]; then
     echo "   FAIL: meta-medtech not found at $YOCTO_DIR/meta-medtech"
@@ -116,7 +122,7 @@ echo "OK: Layer setup complete"
 echo ""
 echo "Available layers:"
 for d in "$YOCTO_DIR"/poky "$YOCTO_DIR"/meta-openembedded \
-          "$YOCTO_DIR"/meta-qt6 "$YOCTO_DIR"/meta-medtech; do
+          "$YOCTO_DIR"/meta-qt6 "$YOCTO_DIR"/meta-timesys "$YOCTO_DIR"/meta-medtech; do
     if [ -d "$d" ]; then
         echo "   $d"
     fi

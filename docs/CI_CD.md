@@ -26,7 +26,7 @@ It runs on GitHub-hosted Ubuntu 22.04 runners with a 360-minute job timeout.
 **What CI does on every run:**
 1. Frees up disk space on the runner (~12–15 GB freed)
 2. Installs Yocto host tools
-3. Clones Yocto layers (poky, meta-openembedded, meta-qt6)
+3. Clones Yocto layers (poky, meta-openembedded, meta-qt6, meta-timesys)
 4. Initializes the build directory from sample configs
 5. Runs Yocto preflight checks (metadata parse + URI validation)
 6. Builds the image with `bitbake`
@@ -69,13 +69,20 @@ Ubuntu packages required by Poky/kirkstone.
 
 ### Clone Yocto layers
 
-Clones three layers with `--depth 1` (shallow) to minimize download time:
+Clones four layers with `--depth 1` (shallow) to minimize download time:
 - `poky` (kirkstone) — Yocto/OE build system
 - `meta-openembedded` (kirkstone) — Extended package set
 - `meta-qt6` (6.4) — Qt6 framework
+- `meta-timesys` (kirkstone) — Vigiles SBOM assessment integration
 
 For `meta-openembedded`, only the three required sublayers are kept
 (`meta-oe`, `meta-python`, `meta-networking`); others are deleted to save space.
+
+### Configure Vigiles key file
+
+The workflow reads the `VIGILES_KEY_DATA` GitHub Actions secret, writes it to a
+temporary file, and exports `VIGILES_KEY_FILE` via `GITHUB_ENV` so BitBake can
+run the `vigiles` class.
 
 ### Initialize build directory
 

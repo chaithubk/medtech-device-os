@@ -8,7 +8,7 @@
   // workspace at /workspace.
   //
   // After the container starts, postCreateCommand runs quick-setup.sh which:
-  //   1. Clones the required Yocto layers (poky, meta-openembedded, meta-qt6)
+  //   1. Clones the required Yocto layers (poky, meta-openembedded, meta-qt6, meta-timesys)
   //   2. Creates yocto/build/conf/bblayers.conf and local.conf
   //   3. Ensures the `builder` user owns /workspace
   //

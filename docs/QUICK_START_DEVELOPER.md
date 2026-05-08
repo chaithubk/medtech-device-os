@@ -29,7 +29,7 @@
    - Or: `Ctrl+Shift+P` → **Dev Containers: Reopen in Container**
 
 4. The container builds and then runs `quick-setup.sh` automatically.
-   - This clones the Yocto layers (poky, meta-openembedded, meta-qt6) — takes ~2 minutes on first run.
+   - This clones the Yocto layers (poky, meta-openembedded, meta-qt6, meta-timesys) — takes ~2 minutes on first run.
    - Subsequent opens are instant (layers are already present).
 
 5. Wait for the "postCreateCommand" to complete in the VS Code terminal.
