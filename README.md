@@ -84,6 +84,7 @@ bash scripts/run-qemu.sh
 - 📖 **Full guide:** [docs/QUICK_START_DEVELOPER.md](docs/QUICK_START_DEVELOPER.md)
 - 🏗 **Build options:** [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md)
 - 📦 **Layer structure:** [docs/LAYER_STRUCTURE.md](docs/LAYER_STRUCTURE.md)
+- 🧭 **Script purpose map:** [scripts/README.md](scripts/README.md)
 
 ---
 

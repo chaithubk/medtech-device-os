@@ -84,6 +84,11 @@ The workflow reads the `VIGILES_KEY_DATA` GitHub Actions secret, writes it to a
 temporary file, and exports `VIGILES_KEY_FILE` via `GITHUB_ENV` so BitBake can
 run the `vigiles` class.
 
+For local dev-container builds, `scripts/quick-setup.sh` creates
+`/workspace/.secrets/vigiles-key.txt` with a placeholder payload.
+Replace that placeholder with your real key content and run `bitbake`.
+The wrapper auto-detects this default file and exports `VIGILES_KEY_FILE`.
+
 ### Initialize build directory
 
 Sources `oe-init-build-env` to create the `yocto/build/` directory, then
@@ -225,8 +230,7 @@ When a build step fails:
 |---|---|
 | `.devcontainer/Dockerfile` | Container image definition |
 | `.devcontainer/devcontainer.json` | VS Code dev container settings |
-| `scripts/quick-setup.sh` | Local layer clone and setup |
-| `scripts/setup-devenv.sh` | Extended local environment setup |
+| `scripts/quick-setup.sh` | Canonical local setup (layers, config, ownership fix) |
 | `yocto/build/conf/bblayers.conf` | Generated per-machine config (gitignored) |
 | `yocto/build/conf/local.conf` | Generated per-machine config (gitignored) |
 

@@ -17,7 +17,7 @@ env:
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
-  # ── 1. Detect whether all changes are non-build files (workflow, docs, markdown, shell) ──
+  # ── 1. Detect whether changes affect Yocto build (positive filter) ──
   detect-changes:
     name: Detect Changed Files
     runs-on: ubuntu-22.04
@@ -31,7 +31,7 @@ jobs:
       - name: Determine changed files
         id: check
         run: |
-          SKIP_BUILD=false
+          SKIP_BUILD=true  # Default: skip unless build-affecting changes found
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
@@ -52,21 +52,24 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
-          # Skip the image build when every changed file is in a non-build path:
-          #   .github/workflows/  — workflow definitions
-          #   docs/               — documentation directory
-          #   *.md at any level   — markdown files (README, TESTING, etc.)
-          #   *.sh at any level   — helper scripts
-          if [[ -n "$CHANGED" ]]; then
-            BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
-              '^(\.github/workflows/|docs/|[^/]+\.(md|sh)$|.+\.(md|sh)$)' || true)
-            if [[ -z "$BUILD_AFFECTING" ]]; then
-              SKIP_BUILD=true
+          # Trigger build only when Yocto sources/config change.
+          # This intentionally ignores docs/scripts/tests/workflow edits to avoid
+          # expensive image builds unless yocto/ content changes.
+          if [[ -z "$CHANGED" ]]; then
+            # No changes detected (e.g., workflow_dispatch, initial push) → always build
+            SKIP_BUILD=false
+          else
+            BUILD_AFFECTING=$(echo "$CHANGED" | grep -E \
+              '^yocto/' || true)
+            if [[ -n "$BUILD_AFFECTING" ]]; then
+              SKIP_BUILD=false
             fi
           fi
 
           echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Result: skip_build=$SKIP_BUILD"
+          echo "Build-affecting files (yocto/**):"
+          echo "${BUILD_AFFECTING:-<none>}"
+          echo "Result: skip_build=$SKIP_BUILD (Build affected: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
 
   # ── 2a. Non-build-affecting changes: validate YAML, skip image build ────────
   validate-yaml:

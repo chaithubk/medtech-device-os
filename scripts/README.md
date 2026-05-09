@@ -67,6 +67,18 @@ bash scripts/download-and-run-qemu.sh --dry-run
 
 ## 👨‍💻 Developer Scripts (build inside dev container)
 
+### Canonical Local Build Path
+
+Use this path for day-to-day development inside the dev container:
+
+```bash
+bash scripts/quick-setup.sh
+bitbake core-image-medtech
+```
+
+`bitbake` is a wrapper (`scripts/bitbake`) that always ensures setup is ready.
+This is the single recommended build path.
+
 ### `bitbake` *(wrapper — not a script you call directly)*
 
 **A transparent wrapper around the real BitBake binary. This is what makes `bitbake` work everywhere in the container.**
@@ -91,25 +103,11 @@ See the file itself for the full documented implementation.
 
 ---
 
-### `build.sh`
-
-**Quick local build** for development iteration.
-
-- Initializes Yocto environment in one step
-- Adds local workarounds for Qt/network issues
-- Suitable for: testing recipe changes, quick iterations
-
-```bash
-bash scripts/build.sh
-```
-
----
-
 ### `build-robust.sh`
 
 **Production-grade build** with full diagnostics and error recovery.
 
-- Runs pre-flight checks → clones layers with retry → builds with diagnostics
+- Runs pre-flight checks → canonical setup (`quick-setup.sh`) → builds with diagnostics
 - Collects disk usage, compiler versions, failed task logs
 - Matches CI pipeline behavior
 - Suitable for: final validation before CI push, reproducible builds
@@ -163,18 +161,63 @@ bash scripts/test-qemu.sh
 
 ### `quick-setup.sh`
 
-**One-time setup** (runs automatically via `postCreateCommand`). Clones Yocto
-layers and initializes `yocto/build/conf/`. The `bitbake` wrapper calls this
-automatically if needed.
+**Canonical setup script** for local/dev-container builds.
 
-### `setup-devenv.sh`
+- Runs automatically via `postCreateCommand`
+- Ensures `builder` user exists
+- Clones/verifies required layers via `clone-with-retry.sh`
+- Fixes ownership so builder can read git metadata for all layers
+- Initializes and refreshes `yocto/build/conf/*` from samples
+- Applies local networking/workaround config snippets idempotently
 
-Extended environment setup (installs host tools, clones layers). Use
-`quick-setup.sh` for most cases.
+### Local Vigiles Key (dev container)
+
+CI uses the `VIGILES_KEY_DATA` secret and writes it to a temporary key file.
+For local builds, `quick-setup.sh` now bootstraps a local key file template at
+`/workspace/.secrets/vigiles-key.txt` automatically.
+
+```bash
+# 1) Run setup (automatic in postCreate, safe to re-run)
+bash scripts/quick-setup.sh
+
+# 2) Replace placeholder payload with your real key
+nano /workspace/.secrets/vigiles-key.txt
+
+# 3) Build normally (wrapper auto-detects key path)
+bitbake core-image-medtech
+```
+
+Notes:
+- `quick-setup.sh` already ensures `INHERIT += "vigiles"` in local config.
+- The `scripts/bitbake` wrapper auto-exports `VIGILES_KEY_FILE` when the
+  default local file exists and no placeholder remains.
+- If you need a non-default key path, export `VIGILES_KEY_FILE` explicitly.
 
 ### `clone-with-retry.sh`
 
 Clones Yocto layers with retry logic and mirror fallback. Called by `build-robust.sh`.
+
+---
+
+## Script Inventory (What Is Active)
+
+| Script | Status | Primary Use |
+|---|---|---|
+| `bitbake` | Active | Canonical build entrypoint wrapper |
+| `quick-setup.sh` | Active | Canonical local setup |
+| `clone-with-retry.sh` | Active | Layer clone/verification helper |
+| `build-robust.sh` | Optional | Full diagnostic build flow |
+| `run-qemu.sh` | Active | Boot local built image |
+| `test-qemu.sh` | Active | Verify running QEMU instance |
+| `setup-host-qemu-prereqs.sh` | Active | Host prep for release users |
+| `download-and-run-qemu.sh` | Active | Download+boot release bundle |
+| `package-release-artifacts.sh` | Active | CI/local release packaging |
+| `verify-release-package.sh` | Active | CI/local release verification |
+| `verify-image.sh` | Active | Build policy checks |
+| `process-sbom.sh` | Active | Collect SPDX outputs |
+| `generate-sbom.sh` | Active | Generate CycloneDX SBOM |
+| `audit-image-deps.sh` | Active | Dependency closure analysis |
+| `preflight-check.sh` | Active | Tooling/system preflight checks |
 
 ---
 
@@ -256,7 +299,8 @@ bash scripts/download-and-run-qemu.sh     # every time
 
 ```bash
 # In the dev container terminal:
-bitbake core-image-medtech   # full build
+bash scripts/quick-setup.sh
+bitbake core-image-medtech
 bash scripts/run-qemu.sh     # boot and test
 ```
 
@@ -271,7 +315,9 @@ bash scripts/run-qemu.sh
 ### Maintainer: Before pushing to CI
 
 ```bash
-bash scripts/build-robust.sh                          # full validation build
+bash scripts/quick-setup.sh
+bitbake core-image-medtech                            # canonical full build
+bash scripts/build-robust.sh                          # optional deep diagnostics
 bash scripts/generate-sbom.sh                         # generate SBOM
 bash scripts/verify-image.sh python-sanity            # check Python packages
 bash scripts/package-release-artifacts.sh --image-name core-image-medtech

@@ -78,13 +78,13 @@ fi
 
 if [ -z "$KERNEL" ] || [ ! -f "$KERNEL" ]; then
     echo "❌ Kernel not found: $KERNEL"
-    echo "Build the image first: bash scripts/build-robust.sh"
+    echo "Build the image first: bitbake core-image-medtech"
     exit 1
 fi
 
 if [ -z "$ROOTFS" ] || [ ! -f "$ROOTFS" ]; then
     echo "❌ Rootfs not found: $ROOTFS"
-    echo "Build the image first: bash scripts/build-robust.sh"
+    echo "Build the image first: bitbake core-image-medtech"
     exit 1
 fi
 

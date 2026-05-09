@@ -48,3 +48,6 @@ sbom/*.json
 # Environment
 .env
 .env.local
+
+# Local secrets (e.g., Vigiles key file)
+.secrets/

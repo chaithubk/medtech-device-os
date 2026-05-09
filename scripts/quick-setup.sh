@@ -1,9 +1,25 @@
 #!/bin/bash
 
-# Quick setup for QEMU building
-# Run this once after reopening container
+# Canonical local setup for dev container Yocto builds.
+# This script is idempotent and can be safely re-run.
 
 set -e
+
+SECRETS_DIR="/workspace/.secrets"
+DEFAULT_VIGILES_KEY_FILE="$SECRETS_DIR/vigiles-key.txt"
+VIGILES_PLACEHOLDER="REPLACE_WITH_VIGILES_KEY_PAYLOAD"
+
+ensure_builder_user() {
+    if id -u builder > /dev/null 2>&1; then
+        return 0
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        useradd -m -s /bin/bash builder
+    else
+        echo "⚠️  User 'builder' not found and current user is not root; skipping user creation"
+    fi
+}
 
 bblayers_needs_refresh() {
     local file="$1"
@@ -22,28 +38,35 @@ bblayers_needs_refresh() {
 
 cd /workspace
 
-echo "🔧 Quick Yocto Setup"
+echo "🔧 Local Yocto Setup"
 echo ""
+
+if ! command -v git > /dev/null 2>&1; then
+    echo "❌ git command not found!"
+    exit 1
+fi
+
+ensure_builder_user
 
 if [ "$(id -u)" -eq 0 ]; then
     ln -sf /workspace/scripts/bitbake /usr/local/bin/bitbake
 fi
 
-# 1. Ensure Poky exists (auto-bootstrap if missing)
-if [ ! -d "yocto/poky" ]; then
-    echo "📥 Poky not found. Running setup-devenv.sh..."
-    bash scripts/setup-devenv.sh
-fi
+mkdir -p yocto/build yocto/downloads yocto/sstate-cache
 
-# 2. Ensure all required layers are available.
+# 1. Ensure all required Yocto repos exist.
 echo "📥 Verifying Yocto layers..."
 bash scripts/clone-with-retry.sh
 
-# Ensure build directory exists before entering it
+# Ensure builder can read git metadata from every layer even if cloned as root.
+if [ "$(id -u)" -eq 0 ] && id -u builder > /dev/null 2>&1; then
+    chown -R builder:builder /workspace/yocto || true
+fi
+
+# 2. Initialize build conf if missing.
 mkdir -p yocto/build
 cd yocto/build
 
-# 3. Initialize or refresh generated local config
 if [ ! -f "conf/local.conf" ] || [ ! -f "conf/bblayers.conf" ]; then
     echo "📋 Initializing build environment..."
     source ../poky/oe-init-build-env . > /dev/null 2>&1
@@ -51,7 +74,6 @@ if [ ! -f "conf/local.conf" ] || [ ! -f "conf/bblayers.conf" ]; then
     echo "📋 Copying configuration..."
     cp ../conf/local.conf.sample conf/local.conf
     cp ../conf/bblayers.conf.sample conf/bblayers.conf
-
     echo "✅ Build environment ready"
 fi
 
@@ -102,12 +124,33 @@ git://code.qt.io/qt/(.*) git://github.com/qt/\1;protocol=https \n \
 EOF
 fi
 
-# 3. Show next step
+# 3. Bootstrap local Vigiles key file for developer override.
+mkdir -p "$SECRETS_DIR"
+
+if [ ! -f "$DEFAULT_VIGILES_KEY_FILE" ]; then
+    cat > "$DEFAULT_VIGILES_KEY_FILE" <<EOF
+# Timesys Vigiles key payload for local builds.
+# Replace only the line below with your actual key content.
+$VIGILES_PLACEHOLDER
+EOF
+fi
+
+chmod 700 "$SECRETS_DIR" || true
+chmod 600 "$DEFAULT_VIGILES_KEY_FILE" || true
+
+if [ "$(id -u)" -eq 0 ] && id -u builder > /dev/null 2>&1; then
+    chown builder:builder "$SECRETS_DIR" "$DEFAULT_VIGILES_KEY_FILE" || true
+fi
+
+if grep -q "$VIGILES_PLACEHOLDER" "$DEFAULT_VIGILES_KEY_FILE"; then
+    echo "⚠️  Vigiles key placeholder created at $DEFAULT_VIGILES_KEY_FILE"
+    echo "   Replace placeholder text with your real key payload."
+else
+    echo "✅ Local Vigiles key file detected at $DEFAULT_VIGILES_KEY_FILE"
+fi
+
 echo ""
 echo "Ready to build! Run:"
-echo "  # Full image build"
 echo "  bitbake core-image-medtech"
-echo ""
-echo "  # Single recipe build"
 echo "  bitbake medtech-clinician-ui"
 echo ""
