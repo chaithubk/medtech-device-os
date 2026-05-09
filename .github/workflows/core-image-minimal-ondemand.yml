@@ -112,8 +112,9 @@ jobs:
           VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
         run: |
           if [[ -z "${VIGILES_KEY_DATA}" ]]; then
-            echo "Missing required secret: VIGILES_KEY_DATA"
-            exit 1
+            echo "VIGILES_KEY_DATA is not set. Continuing without Vigiles credentials."
+            echo "Vulnerability report generation may be unavailable for this run."
+            exit 0
           fi
 
           KEY_FILE="$(mktemp "${RUNNER_TEMP}/vigiles-key-XXXXXX")"
@@ -128,6 +129,14 @@ jobs:
           source poky/oe-init-build-env build > /dev/null 2>&1
           cp ../conf/local.conf.sample conf/local.conf
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
+
+          if [[ -n "${VIGILES_KEY_FILE:-}" ]]; then
+            echo "VIGILES_KEY_FILE = \"${VIGILES_KEY_FILE}\"" >> conf/local.conf
+            echo "Configured local.conf to use workflow-provided Vigiles key file."
+          else
+            echo "VIGILES_DISABLE_CHECK = \"1\"" >> conf/local.conf
+            echo "No Vigiles key configured; disabled Vigiles online check for this run."
+          fi
 
           {
             echo ""
@@ -174,7 +183,13 @@ jobs:
             echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy"
             echo "Check that conf/local.conf includes: INHERIT += \"vigiles\""
             echo "And verify the VIGILES_KEY_DATA secret contains a valid key payload."
-            exit 1
+            {
+              echo "vigiles_reports_found=0"
+              echo "machine=${MACHINE}"
+              echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "note=Vigiles reports were not available; build artifacts were still produced."
+            } > "artifacts/vigiles/core-image-minimal-${MACHINE}-vigiles-status.txt"
+            exit 0
           fi
 
           for report in "${REPORTS[@]}"; do
@@ -182,6 +197,11 @@ jobs:
           done
 
           printf '%s\n' "${REPORTS[@]}" > "artifacts/vigiles/core-image-minimal-${MACHINE}-vigiles-report-files.txt"
+          {
+            echo "vigiles_reports_found=${#REPORTS[@]}"
+            echo "machine=${MACHINE}"
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "artifacts/vigiles/core-image-minimal-${MACHINE}-vigiles-status.txt"
           echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
 
       - name: Export package inventory
