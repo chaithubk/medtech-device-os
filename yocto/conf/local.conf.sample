@@ -112,27 +112,18 @@ BBINCLUDELOGS = "yes"
 BBINCLUDELOGS_LINES = "200"
 
 # ============================================================
-# SPDX / SBOM generation (Yocto native — kirkstone+)
+# Optional SPDX / SBOM generation toggle
 # ============================================================
-# create-spdx is shipped with Poky; no extra layer needed.
-# It auto-generates an SPDX 2.2 document for every recipe and
-# assembles a complete image-level SPDX JSON during do_rootfs.
-# Output: tmp/deploy/images/qemuarm64/spdx/
-# Standards: ISO/IEC 40110, NTIA Minimum Elements, SPDX 2.2
-INHERIT += "create-spdx"
+# Set MEDTECH_ENABLE_SPDX to "1" (or "true") to enable Yocto create-spdx.
+# Keep it "0" for faster builds when SPDX artifacts are not required.
+MEDTECH_ENABLE_SPDX ?= "0"
+INHERIT:append = "${@' create-spdx' if (d.getVar('MEDTECH_ENABLE_SPDX') or '').strip().lower() in ('1', 'true', 'yes', 'on') else ''}"
 
-# Human-readable indented JSON output
+# SPDX tuning (applies only when create-spdx is enabled)
 SPDX_PRETTY = "1"
-
-# Compress per-package SPDX archives with gzip
 SPDX_ARCHIVE_COMPRESS = "gz"
-
-# Do NOT include source code references in SPDX (saves disk space during build)
 SPDX_INCLUDE_SOURCES = "0"
-
-# Output directory (under DEPLOY_DIR_IMAGE)
 SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
-
 
 # Use a broadly reachable HTTPS endpoint for Yocto connectivity sanity checks
 # across both local and CI environments.
