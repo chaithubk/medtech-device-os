@@ -8,13 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version to use (e.g. v1.2.0). Leave blank to auto-increment from the latest git tag.'
+        description: 'Optional release version to use (e.g. v1.2.0). Leave blank to create a dev-<sha> prerelease for manual runs.'
         required: false
         default: ''
       spdx_enabled:
         description: 'Enable Yocto SPDX generation (create-spdx) for this run.'
         required: false
         default: 'false'
+
+concurrency:
+  group: smart-device-os-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CI_BUILD_IMAGE: core-image-medtech
@@ -39,8 +43,9 @@ jobs:
           SKIP_BUILD=true  # Default: skip unless build-affecting changes found
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
-                      || git diff --name-only HEAD~1 HEAD)
+            CHANGED=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" 2>/dev/null \
+                      || git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
+                      || echo "")
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             BEFORE="${{ github.event.before }}"
             # All-zeros = initial push or force-push; treat as full build
@@ -57,23 +62,26 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
-          # Trigger build only when Yocto sources/config change.
-          # This intentionally ignores docs/scripts/tests/workflow edits to avoid
-          # expensive image builds unless yocto/ content changes.
+          # Skip the image build when every changed file is in a non-build path:
+          #   .github/workflows/  — workflow definitions
+          #   docs/               — documentation directory
+          #   *.md at any level   — markdown files (README, TESTING, etc.)
+          # NOTE: shell scripts are treated as build-affecting because they
+          # participate directly in CI build/release flow.
           if [[ -z "$CHANGED" ]]; then
-            # No changes detected (e.g., workflow_dispatch, initial push) → always build
+            # No diff context available (workflow_dispatch / initial push) -> full build.
             SKIP_BUILD=false
           else
-            BUILD_AFFECTING=$(echo "$CHANGED" | grep -E \
-              '^yocto/' || true)
+            BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
+              '^(\.github/workflows/|docs/|[^/]+\.md$|.+\.md$)' || true)
             if [[ -n "$BUILD_AFFECTING" ]]; then
               SKIP_BUILD=false
             fi
           fi
 
           echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Build-affecting files (yocto/**):"
-          echo "${BUILD_AFFECTING:-<none>}"
+          echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
+          echo "Build-affecting files:"
           echo "Result: skip_build=$SKIP_BUILD (Build affected: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
 
   # ── 2a. Non-build-affecting changes: validate YAML, skip image build ────────
@@ -532,26 +540,63 @@ jobs:
           echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
 
       - name: Package release bundle
+        timeout-minutes: 45
         run: |
-          echo "=== Packaging release bundle (max 6m) ==="
+          set -euo pipefail
           export PACKAGE_GZIP_LEVEL=1
           export PACKAGE_HEARTBEAT_SECONDS=30
 
-          if ! timeout --signal=TERM --kill-after=15s 6m \
-            bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"; then
-            status=$?
-            if [ "$status" -eq 124 ]; then
-              echo "Packaging timed out after 6 minutes"
+          for attempt in 1 2; do
+            echo "=== Package release bundle (attempt ${attempt}/2) ==="
+            if timeout 45m bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"; then
+              echo "Package release bundle succeeded"
+              break
             fi
-            exit "$status"
-          fi
+
+            if [[ "$attempt" -eq 2 ]]; then
+              echo "Package release bundle failed after retries"
+              exit 1
+            fi
+
+            echo "Package release bundle failed; cleaning artifacts directory before retry"
+            rm -rf artifacts/*
+          done
 
       - name: Verify release bundle
+        timeout-minutes: 15
         run: |
-          bash scripts/verify-release-package.sh --image-name "${CI_BUILD_IMAGE}"
+          set -euo pipefail
+          for attempt in 1 2; do
+            echo "=== Verify release bundle (attempt ${attempt}/2) ==="
+            if timeout 15m bash scripts/verify-release-package.sh --image-name "${CI_BUILD_IMAGE}"; then
+              echo "Verify release bundle succeeded"
+              break
+            fi
+
+            if [[ "$attempt" -eq 2 ]]; then
+              echo "Verify release bundle failed after retries"
+              exit 1
+            fi
+
+            echo "Verify release bundle failed; retrying"
+          done
 
       - name: Finalize upload directory
         run: |
+          set -euo pipefail
+          REQUIRED=(
+            "artifacts/${CI_BUILD_IMAGE}-qemuarm64-bundle.tar.gz"
+            "artifacts/${CI_BUILD_IMAGE}-qemuarm64-manifest.json"
+            "artifacts/SHA256SUMS"
+          )
+
+          for f in "${REQUIRED[@]}"; do
+            if [[ ! -f "$f" ]]; then
+              echo "Missing required release artifact: $f"
+              exit 1
+            fi
+          done
+
           echo "=== ARTIFACTS READY ==="
           ls -lh artifacts/
           du -sh artifacts/
@@ -559,12 +604,12 @@ jobs:
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        if: always()
+        if: success()
         with:
           name: qemu-image-medtech
           path: artifacts/
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
 
 
       # === Create GitHub Release with QEMU artifacts ===
@@ -582,8 +627,11 @@ jobs:
             # Explicit version provided via workflow_dispatch input.
             NEXT_TAG="$MANUAL_VERSION"
             echo "Using manually specified version: $NEXT_TAG"
-          else
-            # Auto-increment from the latest vX.Y.Z git tag (push to main or blank dispatch).
+            echo "tag=$NEXT_TAG"    >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # Auto-increment production semver on push to main.
             git fetch --tags --quiet
             LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
             if [[ -z "$LATEST" ]]; then
@@ -595,14 +643,18 @@ jobs:
               NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
             fi
             echo "Previous tag: ${LATEST:-<none>}  →  Next tag: $NEXT_TAG"
+            echo "tag=$NEXT_TAG"        >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"     >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"     >> "$GITHUB_OUTPUT"
+          else
+            # Manual run without explicit version -> unique prerelease tag.
+            echo "tag=dev-${{ github.sha }}-r${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "tag=$NEXT_TAG"    >> "$GITHUB_OUTPUT"
-          echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          echo "make_latest=true" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release with Artifacts
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
         uses: softprops/action-gh-release@v1
         with:
           files: |

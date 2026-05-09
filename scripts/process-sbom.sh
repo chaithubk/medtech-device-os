@@ -41,7 +41,7 @@ RDF_COUNT=0
 while IFS= read -r -d '' f; do
     cp "$f" "$OUTPUT_DIR/"
     RDF_COUNT=$((RDF_COUNT + 1))
-done < <(find "$SPDX_DIR" -maxdepth 2 -name "*.rdf" -o -name "*.rdf.gz" -type f -print0)
+done < <(find "$SPDX_DIR" -maxdepth 2 \( -name "*.rdf" -o -name "*.rdf.gz" \) -type f -print0)
 [ "$RDF_COUNT" -gt 0 ] && echo "  RDF     : $RDF_COUNT file(s) copied"
 
 # ── Copy compressed SPDX archives ─────────────────────────────────────────────

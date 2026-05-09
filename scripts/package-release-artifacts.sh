@@ -190,9 +190,20 @@ copy_in "$QEMUBOOT_CONF" "$METADATA_DIR"
 copy_in "$MANIFEST_PATH" "$METADATA_DIR"
 copy_in "$TESTDATA_PATH" "$METADATA_DIR"
 
-log "Selected rootfs: $(basename "$ROOTFS_PATH")"
+echo "=== Packaging inputs ==="
+echo "Deploy dir : $DEPLOY_DIR"
+echo "Rootfs     : ${ROOTFS_PATH##*/}"
 if [[ -n "$KERNEL_PATH" ]]; then
-  log "Selected kernel: $(basename "$KERNEL_PATH")"
+  echo "Kernel     : ${KERNEL_PATH##*/}"
+fi
+if [[ -n "$QEMUBOOT_CONF" ]]; then
+  echo "QEMUBOOT   : ${QEMUBOOT_CONF##*/}"
+fi
+if [[ -n "$MANIFEST_PATH" ]]; then
+  echo "Manifest   : ${MANIFEST_PATH##*/}"
+fi
+if [[ -n "$TESTDATA_PATH" ]]; then
+  echo "Testdata   : ${TESTDATA_PATH##*/}"
 fi
 
 mapfile -t DTB_PATHS < <(find -L "$DEPLOY_DIR" -maxdepth 1 \( -type f -o -type l \) -name "*.dtb" | sort)
@@ -245,9 +256,14 @@ MANIFEST_JSON="$OUTPUT_DIR/${IMAGE_NAME}-${MACHINE}-manifest.json"
 
 cp "$MANIFEST_JSON" "$METADATA_DIR/manifest.json"
 
+echo "=== Payload summary ==="
+find "$PAYLOAD_DIR" -type f -printf '  %P\n' | sort
+du -sh "$PAYLOAD_DIR" | awk '{print "Payload size     : " $1}'
+
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_NAME"
 log "Creating archive: $ARCHIVE_PATH"
 run_with_heartbeat "archive creation" tar -C "$BUNDLE_ROOT" -I "gzip -${GZIP_LEVEL}" -cf "$ARCHIVE_PATH" payload
+du -sh "$ARCHIVE_PATH" | awk '{print "Archive size     : " $1}'
 
 (
   cd "$OUTPUT_DIR"
