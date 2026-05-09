@@ -204,7 +204,6 @@ medtech-device-os/
 ├── docs/                    # All documentation
 ├── scripts/                 # Build, test, and utility scripts
 │   ├── bitbake              # BitBake wrapper (root→builder, env setup)
-│   ├── build.sh             # Quick local build
 │   ├── run-qemu.sh          # Boot locally-built image
 │   └── download-and-run-qemu.sh  # Download & run GitHub Release
 ├── yocto/

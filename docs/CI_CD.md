@@ -225,8 +225,7 @@ When a build step fails:
 |---|---|
 | `.devcontainer/Dockerfile` | Container image definition |
 | `.devcontainer/devcontainer.json` | VS Code dev container settings |
-| `scripts/quick-setup.sh` | Local layer clone and setup |
-| `scripts/setup-devenv.sh` | Extended local environment setup |
+| `scripts/quick-setup.sh` | Canonical local setup (layers, config, ownership fix) |
 | `yocto/build/conf/bblayers.conf` | Generated per-machine config (gitignored) |
 | `yocto/build/conf/local.conf` | Generated per-machine config (gitignored) |
 

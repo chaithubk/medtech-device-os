@@ -22,10 +22,10 @@ bash "$SCRIPT_DIR/preflight-check.sh" || {
 }
 echo ""
 
-# ── Step 2: Clone layers ──────────────────────────────────────────────────────
-echo "--- Step 2/5: Clone/verify Yocto layers ---"
-bash "$SCRIPT_DIR/clone-with-retry.sh" || {
-    echo "FAIL: Layer cloning failed — aborting."
+# ── Step 2: Canonical local setup ─────────────────────────────────────────────
+echo "--- Step 2/5: Canonical local setup ---"
+bash "$SCRIPT_DIR/quick-setup.sh" || {
+    echo "FAIL: quick setup failed — aborting."
     exit 1
 }
 echo ""
@@ -43,33 +43,6 @@ mkdir -p "$BUILD_DIR"
 cd "$YOCTO_DIR"
 # shellcheck disable=SC1091
 source poky/oe-init-build-env build > /dev/null 2>&1
-
-if [ ! -f "conf/local.conf" ]; then
-    cp ../conf/local.conf.sample conf/local.conf
-    echo "   Created conf/local.conf from template"
-fi
-if [ ! -f "conf/bblayers.conf" ]; then
-    cp ../conf/bblayers.conf.sample conf/bblayers.conf
-    echo "   Created conf/bblayers.conf from template"
-fi
-if ! grep -q '^QT_GIT_PROTOCOL = "https"' conf/local.conf; then
-    cat <<'EOF' >> conf/local.conf
-
-# Local-only: keep git:// URL form for bitbake git fetcher, but force
-# transport over HTTPS to avoid blocked git:// traffic.
-QT_GIT_PROTOCOL = "https"
-EOF
-fi
-if ! grep -q 'git://code.qt.io/qt/(.*)' conf/local.conf; then
-    cat <<'EOF' >> conf/local.conf
-
-# Local-only: if code.qt.io is blocked or has TLS chain issues, fall back to
-# the official Qt GitHub mirror for qt/* repositories.
-PREMIRRORS:append = " \
-git://code.qt.io/qt/(.*) git://github.com/qt/\1;protocol=https \n \
-"
-EOF
-fi
 echo "   OK: build directory ready at $BUILD_DIR"
 echo ""
 

@@ -21,7 +21,7 @@ def test_meta_medtech_layer():
 def test_scripts_executable():
     """Verify build scripts exist and are executable."""
     scripts_dir = os.path.join(os.path.dirname(__file__), '../../scripts')
-    scripts = ['build.sh', 'run-qemu.sh', 'generate-sbom.sh']
+    scripts = ['quick-setup.sh', 'bitbake', 'run-qemu.sh', 'generate-sbom.sh']
     
     for script in scripts:
         script_path = os.path.join(scripts_dir, script)
