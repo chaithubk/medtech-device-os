@@ -5,6 +5,10 @@
 
 set -e
 
+SECRETS_DIR="/workspace/.secrets"
+DEFAULT_VIGILES_KEY_FILE="$SECRETS_DIR/vigiles-key.txt"
+VIGILES_PLACEHOLDER="REPLACE_WITH_VIGILES_KEY_PAYLOAD"
+
 ensure_builder_user() {
     if id -u builder > /dev/null 2>&1; then
         return 0
@@ -118,6 +122,31 @@ PREMIRRORS:append = " \
 git://code.qt.io/qt/(.*) git://github.com/qt/\1;protocol=https \n \
 "
 EOF
+fi
+
+# 3. Bootstrap local Vigiles key file for developer override.
+mkdir -p "$SECRETS_DIR"
+
+if [ ! -f "$DEFAULT_VIGILES_KEY_FILE" ]; then
+    cat > "$DEFAULT_VIGILES_KEY_FILE" <<EOF
+# Timesys Vigiles key payload for local builds.
+# Replace only the line below with your actual key content.
+$VIGILES_PLACEHOLDER
+EOF
+fi
+
+chmod 700 "$SECRETS_DIR" || true
+chmod 600 "$DEFAULT_VIGILES_KEY_FILE" || true
+
+if [ "$(id -u)" -eq 0 ] && id -u builder > /dev/null 2>&1; then
+    chown builder:builder "$SECRETS_DIR" "$DEFAULT_VIGILES_KEY_FILE" || true
+fi
+
+if grep -q "$VIGILES_PLACEHOLDER" "$DEFAULT_VIGILES_KEY_FILE"; then
+    echo "⚠️  Vigiles key placeholder created at $DEFAULT_VIGILES_KEY_FILE"
+    echo "   Replace placeholder text with your real key payload."
+else
+    echo "✅ Local Vigiles key file detected at $DEFAULT_VIGILES_KEY_FILE"
 fi
 
 echo ""

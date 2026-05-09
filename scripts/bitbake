@@ -87,6 +87,7 @@ PROJECT_ROOT="/workspace"
 BUILD_DIR="$PROJECT_ROOT/yocto/build"
 OE_INIT="$PROJECT_ROOT/yocto/poky/oe-init-build-env"
 REAL_BITBAKE="$PROJECT_ROOT/yocto/poky/bitbake/bin/bitbake"
+DEFAULT_VIGILES_KEY_FILE="$PROJECT_ROOT/.secrets/vigiles-key.txt"
 
 bblayers_ready() {
     local file="$BUILD_DIR/conf/bblayers.conf"
@@ -111,8 +112,21 @@ ensure_local_build_setup() {
     fi
 }
 
+auto_detect_vigiles_key() {
+    if [ -n "${VIGILES_KEY_FILE:-}" ]; then
+        return 0
+    fi
+
+    if [ -f "$DEFAULT_VIGILES_KEY_FILE" ] \
+        && ! grep -q "REPLACE_WITH_VIGILES_KEY_PAYLOAD" "$DEFAULT_VIGILES_KEY_FILE"; then
+        export VIGILES_KEY_FILE="$DEFAULT_VIGILES_KEY_FILE"
+    fi
+}
+
 run_bitbake_as_builder() {
     local quoted_args=""
+    local quoted_env=""
+    local env_cmd=""
     local arg
 
     for arg in "$@"; do
@@ -120,10 +134,18 @@ run_bitbake_as_builder() {
         quoted_args+=" ${arg}"
     done
 
-    exec su - builder -c "cd '$PROJECT_ROOT' && bash scripts/quick-setup.sh >/dev/null && source yocto/poky/oe-init-build-env yocto/build >/dev/null && exec '$REAL_BITBAKE'${quoted_args}"
+    # Preserve optional Vigiles key path across root -> builder switch.
+    if [ -n "${VIGILES_KEY_FILE:-}" ]; then
+        printf -v arg '%q' "$VIGILES_KEY_FILE"
+        quoted_env+=" VIGILES_KEY_FILE=${arg}"
+        env_cmd="export${quoted_env} && "
+    fi
+
+    exec su - builder -c "cd '$PROJECT_ROOT' && bash scripts/quick-setup.sh >/dev/null && source yocto/poky/oe-init-build-env yocto/build >/dev/null && ${env_cmd}exec '$REAL_BITBAKE'${quoted_args}"
 }
 
 ensure_local_build_setup
+auto_detect_vigiles_key
 
 if [ "$(id -u)" -eq 0 ]; then
     run_bitbake_as_builder "$@"

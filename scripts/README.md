@@ -170,6 +170,29 @@ bash scripts/test-qemu.sh
 - Initializes and refreshes `yocto/build/conf/*` from samples
 - Applies local networking/workaround config snippets idempotently
 
+### Local Vigiles Key (dev container)
+
+CI uses the `VIGILES_KEY_DATA` secret and writes it to a temporary key file.
+For local builds, `quick-setup.sh` now bootstraps a local key file template at
+`/workspace/.secrets/vigiles-key.txt` automatically.
+
+```bash
+# 1) Run setup (automatic in postCreate, safe to re-run)
+bash scripts/quick-setup.sh
+
+# 2) Replace placeholder payload with your real key
+nano /workspace/.secrets/vigiles-key.txt
+
+# 3) Build normally (wrapper auto-detects key path)
+bitbake core-image-medtech
+```
+
+Notes:
+- `quick-setup.sh` already ensures `INHERIT += "vigiles"` in local config.
+- The `scripts/bitbake` wrapper auto-exports `VIGILES_KEY_FILE` when the
+  default local file exists and no placeholder remains.
+- If you need a non-default key path, export `VIGILES_KEY_FILE` explicitly.
+
 ### `clone-with-retry.sh`
 
 Clones Yocto layers with retry logic and mirror fallback. Called by `build-robust.sh`.
