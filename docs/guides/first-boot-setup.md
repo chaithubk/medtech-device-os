@@ -8,10 +8,10 @@ For public-hardened release images, SSH access is not enabled by default. This g
 
 When you boot a MedTech Device OS image for the first time:
 
-1. The system displays a login prompt on the serial console
-2. You log in as `medadmin` with a temporary password
-3. The first-boot setup service automatically prompts you to provide your SSH public key
-4. After key provisioning, password login is **permanently disabled**
+1. The first-boot setup wizard opens on the serial console
+2. You paste one SSH public key line
+3. The key is stored as `medadmin` authorized key
+4. Password login remains disabled
 5. All future access uses SSH key-based authentication
 
 ---
@@ -52,25 +52,13 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHlahII4BW7uNRgtBfCADGQA7Lnfz/df5pz6OLmejKv0
 
 ## Step 2: Boot the MedTech Device OS Image
 
-Boot the image in QEMU or your target device. When you see the login prompt:
-
-```
-Yocto (Kirkstone) 4.0.35 qemuarm64 ttyAMA0
-
-qemuarm64 login: 
-```
+Boot the image in QEMU or your target device. The first-boot setup wizard appears on `ttyAMA0` before a normal login prompt.
 
 ---
 
 ## Step 3: First-Boot SSH Key Provisioning
 
-1. **Log in with temporary password:**
-   ```
-   Login: medadmin
-   Password: medtech
-   ```
-
-2. **SSH key provisioning prompt appears automatically:**
+1. **SSH key provisioning prompt appears automatically:**
 
    You'll see a screen like:
    ```
@@ -86,12 +74,12 @@ qemuarm64 login:
    Press Enter when ready to paste your SSH public key:
    ```
 
-3. **Follow the on-screen prompts:**
+2. **Follow the on-screen prompts:**
    - Press Enter
    - Paste your SSH public key (from Step 1) using Ctrl+Shift+V or right-click
-   - Press Ctrl+D on a new line to finish
+   - Press Enter
 
-4. **Success screen:**
+3. **Success screen:**
    ```
    ╔════════════════════════════════════════════════════════════════════╗
    ║               SSH Key Provisioning Complete ✓                      ║
@@ -164,11 +152,10 @@ chmod 600 ~/backup/id_medtech.backup
 
 ## Security Notes
 
-- The temporary first-boot password (`medtech`) is hardcoded and visible to anyone with source code access.
-- It only works on **first boot** (before SSH key is provisioned).
+- No default login password is baked into the image for `medadmin`.
 - After SSH key provisioning, password login is **completely disabled** (`usermod -p '*' medadmin`).
 - The first-boot setup service runs only once (`ConditionFirstBoot=yes`).
-- For production deployments, regenerate the temporary password or use a different provisioning method.
+- For production deployments, provision public keys via build-time or controlled first-boot process.
 
 ---
 
@@ -196,5 +183,5 @@ If you're building locally and want to skip the interactive setup:
 ## See Also
 
 - [SSH Provisioning Guide](ssh-provisioning.md) — detailed SSH architecture
-- [Quick Start User](quick-start-user.md) — complete download-and-boot guide
+- [Quick Start User](../getting-started/quick-start-user.md) — complete download-and-boot guide
 - [Deployment Troubleshooting](deployment-troubleshooting.md) — SSH connection issues

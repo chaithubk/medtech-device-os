@@ -151,17 +151,15 @@ MEDTECH_ADMIN_USER ?= "medadmin"
 MEDTECH_ADMIN_AUTHORIZED_KEY ?= ""
 # Local developer default key file (not committed to git)
 MEDTECH_ADMIN_KEY_FILE ?= "/workspace/.secrets/medtech-admin-key.pub"
-# Temporary first-boot password (for serial console provisioning flow)
-# Used ONLY on first boot for SSH key setup; then password is locked.
-# For production releases, this should be a random value or disabled.
-MEDTECH_FIRSTBOOT_PASSWORD ?= "medtech"
+# `usermod -p` requires a pre-hashed value. Keep medadmin locked by default.
+# First-boot SSH provisioning runs on serial console and enables key-based access.
+MEDTECH_ADMIN_PASSWORD_HASH ?= "*"
 
 EXTRA_USERS_PARAMS = " \
     useradd -m -d /home/${MEDTECH_ADMIN_USER} -s /bin/sh ${MEDTECH_ADMIN_USER}; \
-    usermod -p '${MEDTECH_FIRSTBOOT_PASSWORD}' ${MEDTECH_ADMIN_USER}; \
+    usermod -p '${MEDTECH_ADMIN_PASSWORD_HASH}' ${MEDTECH_ADMIN_USER}; \
     groupadd -f systemd-journal; \
     usermod -a -G adm,systemd-journal,sudo ${MEDTECH_ADMIN_USER}; \
-    usermod -o -u 0 -g 0 ${MEDTECH_ADMIN_USER}; \
     usermod -p '!' root; \
 "
 

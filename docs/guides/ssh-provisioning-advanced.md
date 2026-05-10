@@ -372,6 +372,6 @@ sudo umount /mnt/guest
 
 ## See Also
 
-- [SSH_PROVISIONING.md](SSH_PROVISIONING.md) — Quick start and daily usage
-- [QUICK_START_DEVELOPER.md](QUICK_START_DEVELOPER.md) — Full developer workflow
-- [DEPLOYMENT_TROUBLESHOOTING.md](DEPLOYMENT_TROUBLESHOOTING.md) — SSH troubleshooting section
+- [SSH Provisioning Guide](ssh-provisioning.md) — Quick start and daily usage
+- [Quick Start Developer](../getting-started/quick-start-developer.md) — Full developer workflow
+- [Deployment Troubleshooting](deployment-troubleshooting.md) — SSH troubleshooting section

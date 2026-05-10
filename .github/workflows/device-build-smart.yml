@@ -110,7 +110,6 @@ jobs:
           fi
 
           echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
-          echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
           echo "Build-affecting files:"
           echo "Result: skip_build=$SKIP_BUILD (Build affected: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
 

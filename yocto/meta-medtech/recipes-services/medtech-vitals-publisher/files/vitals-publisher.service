@@ -13,8 +13,8 @@ RestartSec=5s
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vitals-publisher
-Environment=MEDTECH_VITALS_SCHEMA=/usr/share/medtech/contracts/vitals/current.json
 EnvironmentFile=/etc/medtech/vitals-publisher.env
+Environment=MEDTECH_VITALS_SCHEMA=/usr/share/medtech/contracts/vitals/current.json
 User=root
 
 [Install]

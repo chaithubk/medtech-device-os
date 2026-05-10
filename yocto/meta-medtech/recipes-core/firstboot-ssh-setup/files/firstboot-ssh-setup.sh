@@ -10,6 +10,7 @@ MEDTECH_ADMIN_USER="medadmin"
 ADMIN_HOME="/home/${MEDTECH_ADMIN_USER}"
 SSH_DIR="${ADMIN_HOME}/.ssh"
 AUTHORIZED_KEYS="${SSH_DIR}/authorized_keys"
+PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-30}"
 
 log() {
     echo "[firstboot-ssh-setup] $*"
@@ -41,7 +42,7 @@ To enable secure SSH access, you need to provide your SSH public key.
 This is a ONE-TIME setup. After you provision your SSH public key:
   1. Password login will be permanently disabled
   2. SSH key-only access will be available
-  3. The serial console login will require the key as well
+    3. This setup wizard will not run again
 
 IMPORTANT: You must have the PRIVATE key on your host to connect after this.
 
@@ -58,15 +59,19 @@ Step 3: Copy the ENTIRE output from Step 2 and paste it below.
 
 Press Enter when ready to paste your SSH public key:
 EOF
-    read -r dummy
+    if ! read -r -t "$PROMPT_TIMEOUT_SECONDS"; then
+        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s; skipping first-boot key prompt"
+        return 1
+    fi
 }
 
 read_public_key() {
     local key=""
     log "Paste your SSH public key (single line):"
-    log "Then press Ctrl+D on a new line to finish:"
-    
-    key=$(cat)
+    if ! read -r -t "$PROMPT_TIMEOUT_SECONDS" key; then
+        error "Timed out waiting for SSH public key input"
+        return 1
+    fi
     
     # Trim whitespace
     key="${key#"${key%%[![:space:]]*}"}"
@@ -86,12 +91,6 @@ validate_ssh_key() {
     # Check for SSH key markers
     if ! printf '%s\n' "$key" | grep -Eq '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) '; then
         error "Invalid SSH public key format. Expected format: ssh-ed25519 AAAA... or ssh-rsa AAAA..."
-        return 1
-    fi
-    
-    # Check for newlines (should be single line)
-    if printf '%s\n' "$key" | grep -q $'\n'; then
-        error "SSH public key should be a single line"
         return 1
     fi
     
@@ -146,7 +145,7 @@ to log in to this device. Keep your private key safe.
 
 Press Enter to continue...
 EOF
-    read -r dummy
+    read -r -t "$PROMPT_TIMEOUT_SECONDS" || true
 }
 
 main() {
@@ -159,7 +158,10 @@ main() {
     fi
     
     while true; do
-        prompt_for_key
+        if ! prompt_for_key; then
+            log "Continuing boot without interactive key provisioning"
+            return 0
+        fi
         
         local public_key
         public_key=$(read_public_key) || continue
