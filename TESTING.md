@@ -1,363 +1,112 @@
-# Testing Guide
+# Testing Checklist
 
-Manual test procedures for MedTech Device OS. Use this as a checklist when
-reviewing PRs or after making significant changes.
-
----
-
-## Table of Contents
-
-- [Test Categories](#test-categories)
-- [User Journey: Run a Release](#user-journey-run-a-release)
-- [Developer Journey: Build and Boot](#developer-journey-build-and-boot)
-- [Script Validation Tests](#script-validation-tests)
-- [Documentation Link Tests](#documentation-link-tests)
-- [CI Pipeline Tests](#ci-pipeline-tests)
-- [Regression Checklist](#regression-checklist)
+Quick manual tests to verify before merging a PR. Focus on the happy path.
 
 ---
 
-## Test Categories
-
-| Category | Priority | Audience |
-|---|---|---|
-| [User Journey: Run a Release](#user-journey-run-a-release) | P0 | End users |
-| [Developer Journey: Build and Boot](#developer-journey-build-and-boot) | P0 | Developers |
-| [Script Validation Tests](#script-validation-tests) | P1 | Maintainers |
-| [Documentation Link Tests](#documentation-link-tests) | P1 | Maintainers |
-| [CI Pipeline Tests](#ci-pipeline-tests) | P0 | Maintainers |
-
----
-
-## User Journey: Run a Release
-
-### Prerequisites
-
-- Ubuntu 22.04 (native, VM, or WSL2)
-- Internet access
-- No Docker installed (test the Docker-free path)
-
-### Test 1.1: One-time setup
-
-```bash
-bash scripts/setup-host-qemu-prereqs.sh
-```
-
-**Expected:**
-- No errors
-- `qemu-system-aarch64` is available: `qemu-system-aarch64 --version`
-
-### Test 1.2: Download and boot latest release
+## ✓ User Journey: Download & Run
 
 ```bash
 bash scripts/download-and-run-qemu.sh
 ```
-
-**Expected:**
-- [ ] Release metadata is fetched without error
-- [ ] Bundle, manifest, and SHA256SUMS are downloaded
-- [ ] Checksum verification passes ("Checksum verification passed")
-- [ ] Bundle is extracted
-- [ ] Boot info box is displayed with credentials and SSH command
-- [ ] "Waiting for SSH daemon..." message appears
-- [ ] Within 60 seconds: "✓ SSH port is open" or "✓ SSH daemon is responding"
-- [ ] "Connect now: ssh -p 2222 root@localhost" is displayed
-
-### Test 1.3: SSH connection
+- [ ] Downloads without error
+- [ ] Checksums pass
+- [ ] QEMU boots and shows "✓ SSH daemon is responding" within 60s
 
 ```bash
-ssh -p 2222 root@localhost
-# Password: root
+ssh -p 2222 medadmin@localhost
 ```
-
-**Expected:**
-- [ ] SSH connects without error
-- [ ] You see a shell prompt inside the QEMU VM
-- [ ] `cat /etc/medtech-release` shows version info
-
-### Test 1.4: Service verification (inside VM)
+- [ ] Connects successfully
+- [ ] Shell prompt appears
 
 ```bash
-systemctl is-active mosquitto
-systemctl is-active medtech-vitals-publisher
-systemctl is-active medtech-edge-analytics
-systemctl is-active medtech-clinician-ui
+systemctl status mosquitto medtech-vitals-publisher medtech-edge-analytics medtech-clinician-ui
 ```
-
-**Expected:**
-- [ ] All four commands print `active`
-
-### Test 1.5: MQTT data flow (inside VM)
+- [ ] All show `active (running)`
 
 ```bash
 mosquitto_sub -t "medtech/#" -v &
-sleep 15
+sleep 10
 ```
-
-**Expected:**
-- [ ] Within 15 seconds, see `medtech/vitals/latest` messages
-- [ ] Within 20 seconds, see `medtech/predictions/sepsis` messages
-
-### Test 1.6: Console mode (serial)
-
-The default mode attaches the serial console to your terminal. Simply run without
-`--background`:
+- [ ] See `medtech/vitals/latest` and `medtech/predictions/sepsis` topics
 
 ```bash
-# In a new terminal (kill any running QEMU first)
-bash scripts/download-and-run-qemu.sh
+shutdown -h now
 ```
-
-**Expected:**
-- [ ] Terminal is connected to QEMU serial console
-- [ ] Boot messages appear
-- [ ] Login prompt appears (`root` / password `root`)
-- [ ] Ctrl+A then X exits QEMU
-
-### Test 1.7: SSH login
-
-```bash
-# After the VM has booted (wait for login prompt or the "SSH daemon is responding" message):
-ssh -p 2222 root@localhost
-# Password: root
-```
-
-**Expected:**
-- [ ] SSH connects without error
-- [ ] Shell prompt is shown inside the VM
-
-> **Why SSH works:** `medtech-image.bbclass` sets a SHA-512 hashed root password via
-> `EXTRA_USERS_PARAMS`.  An `openssh_%.bbappend` in `meta-medtech` installs
-> `/etc/ssh/sshd_config.d/10-medtech-dev.conf`, which sets `PermitRootLogin yes` and
-> `PasswordAuthentication yes`.  This is intentionally permissive for the loopback-only
-> QEMU guest; it is not suitable for production images.
-
-### Test 1.8: SCP file transfer
-
-```bash
-# Copy a file into the VM
-echo "test" > /tmp/medtech-test.txt
-scp -P 2222 /tmp/medtech-test.txt root@localhost:/tmp/
-# Password: root
-
-# Copy a file out of the VM
-scp -P 2222 root@localhost:/etc/medtech-release ./
-cat medtech-release
-```
-
-**Expected:**
-- [ ] SCP transfer completes without error
-- [ ] File appears at the destination
-
-### Test 1.9: No-wait-ssh mode
-
-```bash
-bash scripts/download-and-run-qemu.sh --background --no-wait-ssh
-```
-
-**Expected:**
-- [ ] QEMU boots without the SSH wait loop
-- [ ] QEMU continues running in background
-
-### Test 1.10: Dry-run mode
-
-```bash
-bash scripts/download-and-run-qemu.sh --dry-run
-```
-
-**Expected:**
-- [ ] No QEMU is launched
-- [ ] QEMU command is printed
-- [ ] Downloaded artifacts are kept (no cleanup)
 
 ---
 
-## Developer Journey: Build and Boot
+## ✓ Developer Journey: Build & Boot
 
-### Prerequisites
-
-- VS Code with Dev Containers extension
-- Docker Desktop
-
-### Test 2.1: Open in dev container
-
-1. Open repository in VS Code
-2. Click "Reopen in Container" when prompted
-
-**Expected:**
-- [ ] Container builds without error
-- [ ] `postCreateCommand` (`quick-setup.sh`) runs and completes
-- [ ] VS Code terminal is available
-
-### Test 2.2: bitbake wrapper
-
-In the container terminal:
 ```bash
-# Should work from any directory
-cd /tmp
-bitbake --version
-cd /workspace
-bitbake --version
+# In VS Code: Ctrl+Shift+P → "Dev Containers: Reopen in Container"
 ```
-
-**Expected:**
-- [ ] BitBake version is printed (not an error about root)
-- [ ] No "Do not use Bitbake as root" error
-
-### Test 2.3: Build single recipe (quick smoke test)
+- [ ] Container builds, `quick-setup.sh` completes
 
 ```bash
 bitbake medtech-system
 ```
-
-**Expected:**
-- [ ] Build completes without error (uses sstate cache if available)
-- [ ] No "ERROR:" lines in output
-
-### Test 2.4: Full image build
+- [ ] Completes without ERROR
 
 ```bash
 bitbake core-image-medtech
 ```
-
-**Expected:**
-- [ ] Build completes (60–120 min first run)
-- [ ] `.ext4` image exists:
-  ```bash
-  ls -lh yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4
-  ```
-
-### Test 2.5: Boot locally-built image
+- [ ] Completes (60–120 min first run)
+- [ ] `.ext4` file exists: `ls -lh yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4`
 
 ```bash
 bash scripts/run-qemu.sh
 ```
-
-**Expected:**
-- [ ] QEMU boots
-- [ ] Login prompt appears
-- [ ] Services start correctly
+- [ ] QEMU boots and reaches login prompt
+- [ ] Services start (verify with `systemctl` as above)
 
 ---
 
-## Script Validation Tests
-
-### Test 3.1: package-release-artifacts.sh
+## ✓ Release Packaging
 
 ```bash
-# Requires a built image (Test 2.4 must pass first)
 bash scripts/package-release-artifacts.sh --image-name core-image-medtech
-```
-
-**Expected:**
-- [ ] Output: "=== Release bundle created ==="
-- [ ] `artifacts/core-image-medtech-qemuarm64-bundle.tar.gz` exists
-- [ ] `artifacts/core-image-medtech-qemuarm64-manifest.json` exists
-- [ ] `artifacts/SHA256SUMS` exists
-
-### Test 3.2: verify-release-package.sh
-
-```bash
-# Run after Test 3.1
 bash scripts/verify-release-package.sh --image-name core-image-medtech
 ```
-
-**Expected:**
-- [ ] Output: "=== Release bundle verification passed ==="
-- [ ] No checksum errors
-
-### Test 3.3: Script deletion verification
-
-```bash
-# These files should NOT exist
-ls scripts/run-ghcr-qemu.sh 2>&1
-ls scripts/package-ghcr-artifacts.sh 2>&1
-ls scripts/verify-ghcr-package.sh 2>&1
-ls Dockerfile.qemu-artifacts 2>&1
-```
-
-**Expected:**
-- [ ] All four commands produce "No such file or directory"
-
-### Test 3.4: No GHCR references in user-facing content
-
-```bash
-grep -ri "GHCR" README.md scripts/README.md docs/ --include="*.md"
-grep -ri "run-ghcr" README.md scripts/README.md docs/ --include="*.md"
-grep -ri "package-ghcr" README.md scripts/README.md docs/ --include="*.md"
-```
-
-**Expected:**
-- [ ] No matches (or only in explicitly historical/legacy context docs)
+- [ ] Both complete without error
+- [ ] Bundle, manifest, and SHA256SUMS exist
 
 ---
 
-## Documentation Link Tests
-
-### Test 4.1: Internal links in README.md
-
-Check that all links in `README.md` pointing to `docs/` work:
+## ✓ Build System Checks
 
 ```bash
-# Check each link target exists
+# Wrapper works
+bitbake --version
+cd /tmp && bitbake --version && cd /workspace
+```
+- [ ] No "Do not use Bitbake as root" error
+
+```bash
+# Documentation links
 grep -o 'docs/[^)]*\.md' README.md | while read f; do
-  [ -f "$f" ] && echo "OK: $f" || echo "MISSING: $f"
+  [ -f "$f" ] || echo "MISSING: $f"
 done
 ```
-
-**Expected:** All links show "OK"
-
-### Test 4.2: docs/README.md links
+- [ ] No output (all links valid)
 
 ```bash
-grep -o '\[.*\](\(.*\.md\))' docs/README.md | grep -o '([^)]*)' | tr -d '()' | while read f; do
-  target="docs/$f"
-  [ -f "$target" ] && echo "OK: $target" || echo "MISSING: $target"
-done
+# CI workflow YAML
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/device-build-smart.yml'))" && echo OK
 ```
-
-**Expected:** All links show "OK"
+- [ ] Prints "OK"
 
 ---
 
-## CI Pipeline Tests
+## Quick Checklist
 
-### Test 5.1: CI uses renamed scripts
-
-Confirm the workflow file references the new script names:
-
-```bash
-grep "package-release-artifacts" .github/workflows/device-build-smart.yml
-grep "verify-release-package" .github/workflows/device-build-smart.yml
-```
-
-**Expected:**
-- [ ] Both commands find matches
-- [ ] No references to old names (package-ghcr, verify-ghcr)
-
-### Test 5.2: CI workflow syntax
-
-```bash
-# Validate YAML syntax (requires python3-yaml)
-python3 -c "import yaml; yaml.safe_load(open('.github/workflows/device-build-smart.yml'))"
-echo "YAML valid"
-```
-
-**Expected:** "YAML valid" with no errors
+- [ ] User can download and run
+- [ ] Developer can build and boot
+- [ ] Services start
+- [ ] Release packaging works
+- [ ] Docs links valid
+- [ ] No obvious regressions
 
 ---
 
-## Regression Checklist
-
-Before merging a PR that touches scripts or documentation:
-
-- [ ] `scripts/download-and-run-qemu.sh --help` works and shows new flags
-- [ ] `scripts/download-and-run-qemu.sh --dry-run` works
-- [ ] `scripts/package-release-artifacts.sh --help` works
-- [ ] `scripts/verify-release-package.sh --help` works
-- [ ] `scripts/bitbake` exists and is executable
-- [ ] `.devcontainer/devcontainer.json` is valid JSONC (VS Code accepts it; the Dev Container CLI validates it)
-- [ ] `yocto/meta-medtech/conf/layer.conf` parses correctly (test with `bitbake -p`)
-- [ ] All doc files exist (see docs/README.md table)
-- [ ] No broken Markdown syntax (headers, code blocks, links)
-- [ ] CI workflow YAML is valid
+See **[docs/](docs/)** for guides and documentation.

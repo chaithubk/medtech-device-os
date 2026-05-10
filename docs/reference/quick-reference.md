@@ -1,6 +1,6 @@
-# MedTech Device OS — Quick Reference
+# Quick Reference — Common Commands
 
-All the common commands in one place. Copy and paste as needed.
+All common commands in one place.
 
 ---
 
@@ -13,7 +13,7 @@ bash scripts/setup-host-qemu-prereqs.sh
 
 ---
 
-## Running Releases (no build required)
+## Running Releases
 
 ```bash
 # Download and boot the latest release
@@ -22,10 +22,10 @@ bash scripts/download-and-run-qemu.sh
 # Boot a specific release version
 bash scripts/download-and-run-qemu.sh --release v1.2.3
 
-# Boot with direct serial console (see full boot log)
+# Boot with direct serial console
 bash scripts/download-and-run-qemu.sh --console
 
-# Boot without waiting for SSH (CI/automation use)
+# Boot without waiting for SSH (CI/automation)
 bash scripts/download-and-run-qemu.sh --no-wait-ssh
 
 # Boot with more memory (default: 256 MB)
@@ -44,18 +44,19 @@ bash scripts/download-and-run-qemu.sh --dry-run
 
 ```bash
 # Connect to running QEMU VM
-ssh -p 2222 root@localhost
-# Password: root
+ssh -p 2222 medadmin@localhost
 
 # Copy file into VM
-scp -P 2222 localfile.txt root@localhost:/tmp/
+scp -P 2222 localfile.txt medadmin@localhost:/tmp/
 
 # Copy file from VM
-scp -P 2222 root@localhost:/var/log/syslog ./
+scp -P 2222 medadmin@localhost:/var/log/syslog ./
 
-# Remove stale host key (when switching releases)
+# Remove stale host key
 ssh-keygen -R "[localhost]:2222"
 ```
+
+SSH password auth is disabled. Provision `MEDTECH_ADMIN_AUTHORIZED_KEY` in `yocto/build/conf/local.conf` before building.
 
 ---
 
@@ -63,10 +64,7 @@ ssh-keygen -R "[localhost]:2222"
 
 ```bash
 # Check all medtech services
-systemctl status mosquitto
-systemctl status medtech-vitals-publisher
-systemctl status medtech-edge-analytics
-systemctl status medtech-clinician-ui
+systemctl status mosquitto medtech-vitals-publisher medtech-edge-analytics medtech-clinician-ui
 
 # Restart a service
 systemctl restart medtech-vitals-publisher
@@ -74,9 +72,6 @@ systemctl restart medtech-vitals-publisher
 # View service logs
 journalctl -u medtech-vitals-publisher -n 50
 journalctl -u medtech-vitals-publisher -f  # live tail
-
-# Watch all services
-watch -n2 systemctl status mosquitto medtech-vitals-publisher medtech-edge-analytics medtech-clinician-ui
 ```
 
 ---
@@ -84,7 +79,7 @@ watch -n2 systemctl status mosquitto medtech-vitals-publisher medtech-edge-analy
 ## MQTT Verification (inside VM)
 
 ```bash
-# Subscribe to all medtech topics (live data stream)
+# Subscribe to all medtech topics
 mosquitto_sub -t "medtech/#" -v
 
 # Subscribe to vitals only
@@ -120,8 +115,7 @@ opkg list-installed 2>/dev/null | head -n 20
 # From SSH session inside VM
 shutdown -h now
 
-# From QEMU serial console
-# Press: Ctrl+A then X
+# From QEMU serial console: Ctrl+A then X
 ```
 
 ---
@@ -147,16 +141,13 @@ bash scripts/run-qemu.sh
 # Package artifacts for release
 bash scripts/package-release-artifacts.sh --image-name core-image-medtech
 
-# Verify the package
-bash scripts/verify-release-package.sh --image-name core-image-medtech
-
 # Generate SBOM
 bash scripts/generate-sbom.sh
 ```
 
 ---
 
-## Developer: Disk Management (in container)
+## Developer: Disk Management
 
 ```bash
 # Check disk usage
@@ -167,11 +158,6 @@ du -sh yocto/build/tmp/
 
 # Free up work directories (safe to delete, will be rebuilt)
 rm -rf yocto/build/tmp/work/
-rm -rf yocto/build/tmp/work-shared/
-rm -rf yocto/sstate-cache/
-
-# Audit build dependencies (no compile)
-su - builder -c 'cd /workspace && bash scripts/audit-image-deps.sh core-image-medtech'
 ```
 
 ---
@@ -187,40 +173,3 @@ bash scripts/download-and-run-qemu.sh
 gh auth login
 bash scripts/download-and-run-qemu.sh
 ```
-
----
-
-## CI Debugging
-
-```bash
-# View CI workflow file
-cat .github/workflows/device-build-smart.yml
-
-# Check what CI runs (preflight parse)
-bitbake -p
-
-# Check URI for specific recipe
-bitbake medtech-vitals-publisher -c checkuri
-```
-
----
-
-## Useful Paths (inside VM)
-
-| Path | Contents |
-|---|---|
-| `/etc/medtech-release` | Image version |
-| `/etc/systemd/system/` | Systemd service files |
-| `/usr/bin/vitals-publisher` | Vitals publisher binary/script |
-| `/usr/bin/edge-analytics` | Edge analytics binary |
-| `/var/log/` | System logs |
-
-## Useful Paths (in container)
-
-| Path | Contents |
-|---|---|
-| `/workspace/yocto/meta-medtech/` | Custom layer |
-| `/workspace/yocto/build/tmp/deploy/images/qemuarm64/` | Built images |
-| `/workspace/yocto/build/tmp/work/` | Recipe work directories |
-| `/workspace/artifacts/` | Packaged release bundle |
-| `/workspace/sbom/` | Generated SBOM |

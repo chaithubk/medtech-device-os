@@ -41,7 +41,7 @@ the first 20–40 seconds after boot.
 2. **Wait and retry manually:**
    ```bash
    # Wait 30 seconds then try
-   sleep 30 && ssh -p 2222 root@localhost
+   sleep 30 && ssh -p 2222 medadmin@localhost
    ```
 
 3. **Use the console instead** to log in directly while SSH starts:
@@ -61,35 +61,42 @@ the first 20–40 seconds after boot.
 
 **Symptom:**
 ```
-ssh -p 2222 root@localhost
-root@localhost's password:
-Permission denied (publickey,password).
+ssh -p 2222 medadmin@localhost
+medadmin@localhost: Permission denied (publickey).
 ```
 
-**Cause:** The sshd configuration inside the VM is not allowing password-based
-root login.  This happens if the image was built without the
-`meta-medtech` OpenSSH policy drop-in
-(`/etc/ssh/sshd_config.d/10-medtech-dev.conf`).
+**Cause:** The image enforces key-only SSH. Root login and password
+authentication are intentionally disabled by policy.
 
-**Fix:** Rebuild the image from the current source — the `openssh_%.bbappend` in
-`yocto/meta-medtech/recipes-core/openssh/` installs the correct drop-in
-automatically.
+**Fix:** Provision your SSH public key at build time and rebuild.
 
-**Background — SSH policy in the QEMU/dev image:**
+1. Set a public key in `yocto/build/conf/local.conf`:
+   ```bash
+   MEDTECH_ADMIN_AUTHORIZED_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@example.com"
+   ```
+2. Rebuild:
+   ```bash
+   bitbake -c cleansstate core-image-medtech
+   bitbake core-image-medtech
+   ```
+3. Reboot QEMU and connect with your private key:
+   ```bash
+   ssh -i ~/.ssh/id_ed25519 -p 2222 medadmin@localhost
+   ```
 
-The QEMU image uses a deliberately permissive SSH configuration so that the
-local developer workflow works out of the box:
+**Background — SSH policy in the image:**
+
+The image uses a production-oriented SSH configuration:
 
 | Setting | Value | Rationale |
 |---|---|---|
-| `PermitRootLogin` | `yes` | QEMU guest is loopback-only; root console access is the primary path |
-| `PasswordAuthentication` | `yes` | Root password set deterministically via `EXTRA_USERS_PARAMS` |
-| `KbdInteractiveAuthentication` | `no` | Avoid double-prompt with PAM |
-| `UsePAM` | `yes` | Required for shadow password lookup |
+| `PermitRootLogin` | `no` | Prevent direct root SSH access |
+| `PasswordAuthentication` | `no` | Eliminate shared/static password risk |
+| `PubkeyAuthentication` | `yes` | Standard for managed access |
+| `UsePAM` | `yes` | Keep PAM/account controls active |
 
-This is **only safe because the QEMU guest is reachable only on 127.0.0.1:2222**
-via QEMU user-mode networking.  For production images, replace this drop-in
-with a hardened configuration (key-only, non-root service account, etc.).
+This policy aligns with standard production hardening and also works for local
+QEMU workflows.
 
 ---
 
@@ -116,7 +123,7 @@ with a hardened configuration (key-only, non-root service account, etc.).
 
 3. **Try with verbose SSH output:**
    ```bash
-   ssh -v -p 2222 root@localhost
+   ssh -v -p 2222 medadmin@localhost
    ```
 
 4. **Restart with more memory:**
@@ -263,15 +270,14 @@ bash scripts/download-and-run-qemu.sh
 
 ### Permission denied when copying files
 
-**Solution:** Use the explicit password form or set up SSH keys:
+**Solution:** Use the managed admin account with your provisioned key:
 
 ```bash
-# Copy a file in (use sshpass for scripted use)
-scp -P 2222 myfile.txt root@localhost:/tmp/
-# Password: root
+# Copy a file in
+scp -P 2222 myfile.txt medadmin@localhost:/tmp/
 
 # Copy a file out
-scp -P 2222 root@localhost:/var/log/syslog ./
+scp -P 2222 medadmin@localhost:/var/log/syslog ./
 ```
 
 ### SCP with host key verification error
@@ -284,7 +290,7 @@ scp -P 2222 root@localhost:/var/log/syslog ./
 ```bash
 # Remove the stale key
 ssh-keygen -R "[localhost]:2222"
-ssh -p 2222 root@localhost
+ssh -p 2222 medadmin@localhost
 ```
 
 ### Large file transfers are slow
@@ -294,7 +300,7 @@ transfers, consider:
 
 ```bash
 # Copy multiple files at once with tar over SSH
-tar czf - /path/to/files | ssh -p 2222 root@localhost 'tar xzf - -C /tmp'
+tar czf - /path/to/files | ssh -p 2222 medadmin@localhost 'tar xzf - -C /tmp'
 ```
 
 ---
