@@ -122,6 +122,7 @@ PACKAGE_EXCLUDE += "\
     libical \
     libmicrohttpd \
     mosquitto-clients \
+    systemd-analyze \
     gnome-desktop-testing \
     python3-pygobject \
     python3-dbus \

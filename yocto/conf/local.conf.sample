@@ -32,6 +32,13 @@ DISTRO_FEATURES:remove = "wayland x11 vulkan"
 # IPv4/IPv6 networking
 DISTRO_FEATURES:append = " ipv4 ipv6"
 
+# Remove unnecessary device/protocol stacks to reduce image bloat
+# - alsa: audio subsystem (not needed for medical IoT headless deployment)
+# - pcmcia: legacy PC card support
+# - usbgadget/usbhost: USB device/host stack (qemuarm64 uses virtio)
+# - nfs: network filesystem support (not needed for edge device)
+DISTRO_FEATURES:remove = "alsa pcmcia usbgadget usbhost nfs"
+
 # Downloads and sstate cache
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
@@ -71,6 +78,13 @@ DISABLE_STATIC = " --disable-static"
 # Do NOT install development packages (-dev, -staticdev) by default
 # This prevents BitBake from building unnecessary development dependencies
 DISTRO_FEATURES:remove = "api-documentation doc"
+
+# Debug and diagnostic tools — exclude from production image
+# Trim BAD_RECOMMENDATIONS that sneak in via packagegroup-base and systemd defaults
+BAD_RECOMMENDATIONS:append = " systemd-analyze systemd-bash-completion kbd kbd-consolefonts \
+    ptest-runner bash-completion git rsync perl strace socat \
+    libical libmicrohttpd gnutls vala python3-pygobject python3-dbus \
+    btrfs-tools mdadm eudev-hwdb nfs-utils-client wpa-supplicant"
 
 # Disable locale payload bloat
 IMAGE_LINGUAS = ""
