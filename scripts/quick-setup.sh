@@ -129,9 +129,7 @@ mkdir -p "$SECRETS_DIR"
 
 if [ ! -f "$DEFAULT_VIGILES_KEY_FILE" ]; then
     cat > "$DEFAULT_VIGILES_KEY_FILE" <<EOF
-# Timesys Vigiles key payload for local builds.
-# Replace only the line below with your actual key content.
-$VIGILES_PLACEHOLDER
+{"email":"REPLACE_WITH_VIGILES_EMAIL","key":"$VIGILES_PLACEHOLDER"}
 EOF
 fi
 

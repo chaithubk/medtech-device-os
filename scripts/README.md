@@ -189,6 +189,8 @@ bitbake core-image-medtech
 
 Notes:
 - `quick-setup.sh` already ensures `INHERIT += "vigiles"` in local config.
+- The key file must be a single valid JSON object (no comments), for example:
+  `{"email":"you@example.com","key":"YOUR-KEY"}`
 - The `scripts/bitbake` wrapper auto-exports `VIGILES_KEY_FILE` when the
   default local file exists and no placeholder remains.
 - If you need a non-default key path, export `VIGILES_KEY_FILE` explicitly.
