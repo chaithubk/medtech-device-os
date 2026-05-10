@@ -142,7 +142,7 @@ KERNEL_MODULE_AUTOLOAD = ""
 # No static root credentials are baked into the image.
 # - root account is locked for password authentication
 # - SSH password authentication is disabled in the OpenSSH drop-in
-# - dedicated admin account is key-based and can escalate via sudo
+# - dedicated admin account is key-based and has root-equivalent privileges
 
 MEDTECH_ADMIN_USER ?= "medadmin"
 # Supply one SSH public key line in local.conf, for example:
@@ -158,6 +158,9 @@ MEDTECH_FIRSTBOOT_PASSWORD ?= "medtech"
 EXTRA_USERS_PARAMS = " \
     useradd -m -d /home/${MEDTECH_ADMIN_USER} -s /bin/sh ${MEDTECH_ADMIN_USER}; \
     usermod -p '${MEDTECH_FIRSTBOOT_PASSWORD}' ${MEDTECH_ADMIN_USER}; \
+    groupadd -f systemd-journal; \
+    usermod -a -G adm,systemd-journal,sudo ${MEDTECH_ADMIN_USER}; \
+    usermod -o -u 0 -g 0 ${MEDTECH_ADMIN_USER}; \
     usermod -p '!' root; \
 "
 
