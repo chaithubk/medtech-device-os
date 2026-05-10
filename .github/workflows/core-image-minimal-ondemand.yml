@@ -216,13 +216,20 @@ jobs:
           MACHINE="${{ github.event.inputs.machine }}"
           mkdir -p artifacts/vigiles
 
-          mapfile -t REPORTS < <(find yocto/build/tmp/deploy -type f \
+          mapfile -t DEPLOY_REPORTS < <(find yocto/build/tmp/deploy -type f \
             \( -iname '*vigiles*' -o -iname '*timesys*' -o -iname '*vuln*' -o -iname '*cve*' \) \
             \( -iname '*.json' -o -iname '*.csv' -o -iname '*.txt' -o -iname '*.xml' -o -iname '*.html' \) \
             2>/dev/null | sort)
 
+          mapfile -t VIGILES_OUTPUTS < <(find yocto/build/vigiles -maxdepth 1 -type f \
+            \( -name 'core-image-medtech-cve.json' -o -name 'linux-yocto-*.config' \) \
+            2>/dev/null | sort)
+
+          REPORTS=("${DEPLOY_REPORTS[@]}" "${VIGILES_OUTPUTS[@]}")
+          mapfile -t REPORTS < <(printf '%s\n' "${REPORTS[@]}" | sed '/^$/d' | sort -u)
+
           if [[ ${#REPORTS[@]} -eq 0 ]]; then
-            echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy"
+            echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy or yocto/build/vigiles"
             echo "Check that conf/local.conf includes: INHERIT += \"vigiles\""
             echo "And verify the VIGILES_KEY_DATA secret contains a valid key payload."
             {
@@ -270,6 +277,51 @@ jobs:
           } > artifacts/core-image-minimal-${MACHINE}-summary.txt
 
           ls -lh artifacts
+
+      - name: Prepare private Vigiles bundle
+        env:
+          VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-artifacts
+          MACHINE="${{ github.event.inputs.machine }}"
+
+          if [[ ! -d artifacts/vigiles ]]; then
+            echo "No artifacts/vigiles directory found; skipping private bundle creation."
+            exit 0
+          fi
+
+          if [[ -z "$(find artifacts/vigiles -type f 2>/dev/null)" ]]; then
+            echo "No Vigiles files available; skipping private bundle creation."
+            exit 0
+          fi
+
+          PRIVATE_TAR="private-artifacts/core-image-minimal-${MACHINE}-vigiles-private.tar.gz"
+          tar -czf "${PRIVATE_TAR}" -C artifacts vigiles
+
+          if [[ -n "${VIGILES_PRIVATE_BUNDLE_PASSPHRASE:-}" ]]; then
+            openssl enc -aes-256-cbc -pbkdf2 -salt \
+              -in "${PRIVATE_TAR}" \
+              -out "${PRIVATE_TAR}.enc" \
+              -pass env:VIGILES_PRIVATE_BUNDLE_PASSPHRASE
+            rm -f "${PRIVATE_TAR}"
+            echo "Created encrypted private Vigiles bundle: ${PRIVATE_TAR}.enc"
+          else
+            echo "VIGILES_PRIVATE_BUNDLE_PASSPHRASE is not set; private Vigiles bundle remains unencrypted."
+          fi
+
+      - name: Upload private Vigiles bundle
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-image-minimal-vigiles-private
+          path: private-artifacts/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Exclude private Vigiles files from public artifacts
+        run: |
+          rm -rf artifacts/vigiles
 
       - name: Upload minimal image analysis artifacts
         uses: actions/upload-artifact@v4

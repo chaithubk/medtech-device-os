@@ -98,6 +98,8 @@ The pipeline (`.github/workflows/device-build-smart.yml`) automatically:
 3. Packages the QEMU bundle (`package-release-artifacts.sh`)
 4. Creates a GitHub Release on `main` branch merges
 
+5. **Packages a private Vigiles bundle** (see below)
+
 ```bash
 # Package release bundle (used by CI)
 bash scripts/package-release-artifacts.sh --image-name core-image-medtech
@@ -108,6 +110,34 @@ bash scripts/verify-release-package.sh --image-name core-image-medtech
 
 - 📖 **CI details:** [docs/maintainers/ci-cd.md](docs/maintainers/ci-cd.md)
 - 🚀 **Release process:** [docs/maintainers/release-process.md](docs/maintainers/release-process.md)
+
+#### Private Vigiles Bundle
+
+The CI workflow creates a **separate, private artifact bundle** containing Vigiles vulnerability/configuration files:
+
+- `core-image-medtech-cve.json`
+- `linux-yocto-*.config`
+
+This bundle is uploaded as a separate artifact (`qemu-image-medtech-vigiles-private`), and is **not included in the public release**.
+
+**Encryption:**
+- If the repository secret `VIGILES_PRIVATE_BUNDLE_PASSPHRASE` is set, the private bundle is encrypted with AES-256 using OpenSSL.
+- Only someone with the passphrase can decrypt and access the contents.
+
+**How to set the passphrase:**
+1. Go to your repository's Settings → Secrets and variables → Actions.
+2. Add a new secret named `VIGILES_PRIVATE_BUNDLE_PASSPHRASE` with a strong, private value (e.g., a long random string).
+
+**How to decrypt:**
+Download the `.tar.gz.enc` file from the workflow artifacts and run:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -in core-image-medtech-qemuarm64-vigiles-private.tar.gz.enc -out core-image-medtech-qemuarm64-vigiles-private.tar.gz
+# Then extract:
+tar -xzf core-image-medtech-qemuarm64-vigiles-private.tar.gz
+```
+
+**Keep your passphrase secure!** Only those with the secret can access the private Vigiles bundle.
 
 ---
 
