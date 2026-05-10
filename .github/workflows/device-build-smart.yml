@@ -15,6 +15,14 @@ on:
         description: 'Enable Yocto SPDX generation (create-spdx) for this run.'
         required: false
         default: 'false'
+      ssh_access_mode:
+        description: 'SSH access policy for this build: public-hardened (no baked admin key) or internal-keyed (bake key from secret).'
+        required: false
+        default: 'public-hardened'
+        type: choice
+        options:
+          - public-hardened
+          - internal-keyed
 
 concurrency:
   group: smart-device-os-${{ github.ref }}
@@ -276,6 +284,58 @@ jobs:
           echo "VIGILES_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
           echo "Vigiles key file configured"
 
+      - name: Configure SSH access mode
+        id: ssh_access
+        env:
+          SSH_ACCESS_MODE_INPUT: ${{ github.event.inputs.ssh_access_mode }}
+          MEDTECH_ADMIN_SSH_PUBLIC_KEY: ${{ secrets.MEDTECH_ADMIN_SSH_PUBLIC_KEY }}
+        run: |
+          MODE="public-hardened"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${SSH_ACCESS_MODE_INPUT:-}" ]]; then
+            MODE="${SSH_ACCESS_MODE_INPUT}"
+          fi
+
+          case "$MODE" in
+            public-hardened|internal-keyed)
+              ;;
+            *)
+              echo "Invalid ssh_access_mode: $MODE"
+              exit 2
+              ;;
+          esac
+
+          echo "SSH_ACCESS_MODE=${MODE}" >> "${GITHUB_ENV}"
+          echo "mode=${MODE}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "$MODE" == "public-hardened" ]]; then
+            echo "Public hardened mode selected: no admin SSH key will be baked into the image."
+            exit 0
+          fi
+
+          if [[ -z "${MEDTECH_ADMIN_SSH_PUBLIC_KEY:-}" ]]; then
+            echo "internal-keyed mode requires GitHub secret MEDTECH_ADMIN_SSH_PUBLIC_KEY."
+            exit 1
+          fi
+
+          KEY_FILE="$(mktemp "${RUNNER_TEMP}/medtech-admin-key-XXXXXX.pub")"
+          printf '%s\n' "${MEDTECH_ADMIN_SSH_PUBLIC_KEY}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+
+          KEY_LINE="$(grep -v '^[[:space:]]*#' "${KEY_FILE}" | sed '/^[[:space:]]*$/d' | head -n 1 || true)"
+          if [[ -z "${KEY_LINE}" ]]; then
+            echo "MEDTECH_ADMIN_SSH_PUBLIC_KEY secret is empty after filtering comments/blank lines."
+            exit 1
+          fi
+
+          if ! printf '%s\n' "${KEY_LINE}" | grep -Eq '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) '; then
+            echo "MEDTECH_ADMIN_SSH_PUBLIC_KEY does not look like a valid SSH public key line."
+            exit 1
+          fi
+
+          printf '%s\n' "${KEY_LINE}" > "${KEY_FILE}"
+          echo "MEDTECH_ADMIN_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
+          echo "Internal keyed mode selected: admin SSH public key file configured."
+
       - name: Apply CI local.conf toggles
         run: |
           LOCAL_CONF="yocto/build/conf/local.conf"
@@ -286,6 +346,19 @@ jobs:
           else
             echo "VIGILES_DISABLE_CHECK = \"1\"" >> "${LOCAL_CONF}"
             echo "No Vigiles key configured; disabled Vigiles online check for this run."
+          fi
+
+          if [[ "${SSH_ACCESS_MODE:-public-hardened}" == "internal-keyed" ]]; then
+            if [[ -z "${MEDTECH_ADMIN_KEY_FILE:-}" ]]; then
+              echo "Internal keyed mode selected but MEDTECH_ADMIN_KEY_FILE is unset."
+              exit 1
+            fi
+            echo "MEDTECH_ADMIN_KEY_FILE = \"${MEDTECH_ADMIN_KEY_FILE}\"" >> "${LOCAL_CONF}"
+            echo "Configured local.conf with workflow-provided MedTech admin SSH key file."
+          else
+            echo "MEDTECH_ADMIN_AUTHORIZED_KEY = \"\"" >> "${LOCAL_CONF}"
+            echo "MEDTECH_ADMIN_KEY_FILE = \"/nonexistent/medtech-admin-key.pub\"" >> "${LOCAL_CONF}"
+            echo "Public hardened mode enforced: image will ship without a baked admin SSH key."
           fi
 
       - name: Yocto preflight (fast-fail metadata and URI checks)
@@ -668,6 +741,11 @@ jobs:
             - Commit: ${{ github.sha }}
             - Branch: ${{ github.ref_name }}
             - Image: core-image-medtech-qemuarm64
+            - SSH access mode: ${{ steps.ssh_access.outputs.mode }}
+
+            **SSH Access Policy**
+            - `public-hardened`: no default admin SSH key is baked into the image.
+            - `internal-keyed`: login is `ssh -i <matching-private-key> -p 2222 medadmin@localhost`.
 
             **Quick Start** (no Docker required):
             ```bash
@@ -683,11 +761,14 @@ jobs:
           generate_release_notes: true
           make_latest: ${{ steps.release_meta.outputs.make_latest }}
 
-      - name: Cleanup Vigiles key file
+      - name: Cleanup temporary key files
         if: always()
         run: |
           if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
             rm -f "${VIGILES_KEY_FILE}"
+          fi
+          if [[ -n "${MEDTECH_ADMIN_KEY_FILE:-}" && -f "${MEDTECH_ADMIN_KEY_FILE}" ]]; then
+            rm -f "${MEDTECH_ADMIN_KEY_FILE}"
           fi
 
       - name: Final disk report

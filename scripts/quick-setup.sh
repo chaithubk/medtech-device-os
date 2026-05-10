@@ -8,6 +8,7 @@ set -e
 SECRETS_DIR="/workspace/.secrets"
 DEFAULT_VIGILES_KEY_FILE="$SECRETS_DIR/vigiles-key.txt"
 VIGILES_PLACEHOLDER="REPLACE_WITH_VIGILES_KEY_PAYLOAD"
+DEFAULT_MEDTECH_ADMIN_KEY_FILE="$SECRETS_DIR/medtech-admin-key.pub"
 
 ensure_builder_user() {
     if id -u builder > /dev/null 2>&1; then
@@ -52,7 +53,21 @@ if [ "$(id -u)" -eq 0 ]; then
     ln -sf /workspace/scripts/bitbake /usr/local/bin/bitbake
 fi
 
-mkdir -p yocto/build yocto/downloads yocto/sstate-cache
+mkdir -p "$SECRETS_DIR" yocto/build yocto/downloads yocto/sstate-cache
+
+# Ensure medtech admin key template exists
+if [ ! -f "$DEFAULT_MEDTECH_ADMIN_KEY_FILE" ]; then
+    cat > "$DEFAULT_MEDTECH_ADMIN_KEY_FILE" << 'KEYEOF'
+# MedTech admin SSH public key for medadmin account
+# Replace the placeholder below with your actual SSH public key (one line)
+# Example: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@example.com
+# Or RSA:  ssh-rsa AAAAB3NzaC1yc2EAAA... you@example.com
+
+REPLACE_WITH_MEDTECH_ADMIN_PUBLIC_KEY
+KEYEOF
+    echo "📝 Created template: $DEFAULT_MEDTECH_ADMIN_KEY_FILE"
+    echo "   👉 Replace placeholder with your SSH public key"
+fi
 
 # 1. Ensure all required Yocto repos exist.
 echo "📥 Verifying Yocto layers..."
@@ -133,11 +148,12 @@ if [ ! -f "$DEFAULT_VIGILES_KEY_FILE" ]; then
 EOF
 fi
 
-chmod 700 "$SECRETS_DIR" || true
-chmod 600 "$DEFAULT_VIGILES_KEY_FILE" || true
+chmod 700 "$SECRETS_DIR" 2>/dev/null || true
+chmod 600 "$DEFAULT_VIGILES_KEY_FILE" 2>/dev/null || true
+chmod 600 "$DEFAULT_MEDTECH_ADMIN_KEY_FILE" 2>/dev/null || true
 
 if [ "$(id -u)" -eq 0 ] && id -u builder > /dev/null 2>&1; then
-    chown builder:builder "$SECRETS_DIR" "$DEFAULT_VIGILES_KEY_FILE" || true
+    chown builder:builder "$SECRETS_DIR" "$DEFAULT_VIGILES_KEY_FILE" "$DEFAULT_MEDTECH_ADMIN_KEY_FILE" 2>/dev/null || true
 fi
 
 if grep -q "$VIGILES_PLACEHOLDER" "$DEFAULT_VIGILES_KEY_FILE"; then

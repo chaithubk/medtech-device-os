@@ -56,7 +56,9 @@ scp -P 2222 medadmin@localhost:/var/log/syslog ./
 ssh-keygen -R "[localhost]:2222"
 ```
 
-SSH password auth is disabled. Provision `MEDTECH_ADMIN_AUTHORIZED_KEY` in `yocto/build/conf/local.conf` before building.
+SSH password auth is disabled.
+For local builds, provision `.secrets/medtech-admin-key.pub` before building.
+For public-hardened release artifacts, no default admin SSH key is baked.
 
 ---
 

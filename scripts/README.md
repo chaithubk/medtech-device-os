@@ -133,14 +133,14 @@ bash scripts/run-qemu.sh --graphics  # with GTK display
 
 **Inside QEMU:**
 ```bash
-# Login: root / Password: root
+# Login: medadmin via SSH key
 systemctl status mosquitto
 mosquitto_sub -t "medtech/#" -v
 ```
 
 **SSH from host:**
 ```bash
-ssh -p 2222 root@localhost   # Password: root
+ssh -p 2222 medadmin@localhost
 ```
 
 ---

@@ -53,6 +53,7 @@ Complete navigation for all MedTech Device OS documentation.
 
 | File | Purpose | Audience |
 |------|---------|----------|
+| [guides/first-boot-setup.md](guides/first-boot-setup.md) | First-boot interactive SSH key provisioning (public releases) | End users |
 | [guides/ssh-provisioning.md](guides/ssh-provisioning.md) | SSH key setup, how it works, troubleshooting | Everyone |
 | [guides/ssh-provisioning-advanced.md](guides/ssh-provisioning-advanced.md) | Technical deep dive, architecture, environment chain | DevOps/Maintainers |
 

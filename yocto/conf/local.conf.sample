@@ -167,3 +167,24 @@ BAD_RECOMMENDATIONS:append = " bash-completion bluez5 btrfs-tools curl kbd mosqu
 # ============================================================
 INHERIT += "buildhistory"
 BUILDHISTORY_COMMIT = "0"
+
+# ============================================================
+# Access provisioning (required for SSH login)
+# ============================================================
+# The image locks root login and disables SSH password authentication.
+# Provide one SSH public key line for the managed admin account (medadmin).
+#
+# AUTO-DETECT (recommended for dev container):
+#   Store your SSH public key in .secrets/medtech-admin-key.pub
+#   The build system will auto-detect and use it.
+#   Example:
+#     echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@example.com" > .secrets/medtech-admin-key.pub
+#
+# MANUAL OVERRIDE (if needed):
+#   Set MEDTECH_ADMIN_AUTHORIZED_KEY directly here:
+#     MEDTECH_ADMIN_AUTHORIZED_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@example.com"
+#
+# IMPORTANT:
+#   - Store actual keys in .secrets/ (not in git)
+#   - A template file was created at .secrets/medtech-admin-key.pub
+#   - If not set, SSH login will be disabled (by design)

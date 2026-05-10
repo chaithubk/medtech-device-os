@@ -72,18 +72,23 @@ Connect now:
 
 ---
 
-## Step 2: Connect via SSH
+## Step 2: First-Boot SSH Key Provisioning
 
-Once the script shows "SSH daemon is responding":
+**Important:** On the first boot, you will be prompted on the serial console to provision your SSH public key.
 
-```bash
-ssh -p 2222 medadmin@localhost
-```
+See the complete guide: **[First-Boot SSH Key Provisioning](../guides/first-boot-setup.md)**
 
-SSH password authentication is disabled. Set `MEDTECH_ADMIN_AUTHORIZED_KEY`
-in `yocto/build/conf/local.conf` before building.
+Quick summary:
+1. Log in to serial console with temporary password: `medadmin / medtech`
+2. First-boot setup will prompt for your SSH public key
+3. Paste your public key when prompted
+4. After provisioning, password login is permanently disabled
+5. Use SSH with your private key for all future access:
+   ```bash
+   ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
+   ```
 
-You are now inside the MedTech Device OS running in QEMU.
+After SSH key provisioning, you are inside the MedTech Device OS running in QEMU.
 
 ---
 
