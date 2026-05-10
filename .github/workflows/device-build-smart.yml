@@ -450,7 +450,18 @@ jobs:
 
       - name: Package release bundle
         run: |
-          bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"
+          echo "=== Packaging release bundle (max 6m) ==="
+          export PACKAGE_GZIP_LEVEL=1
+          export PACKAGE_HEARTBEAT_SECONDS=30
+
+          if ! timeout --signal=TERM --kill-after=15s 6m \
+            bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"; then
+            status=$?
+            if [ "$status" -eq 124 ]; then
+              echo "Packaging timed out after 6 minutes"
+            fi
+            exit "$status"
+          fi
 
       - name: Verify release bundle
         run: |
