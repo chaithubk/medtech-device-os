@@ -4,6 +4,34 @@
 
 set -euo pipefail
 
+log() {
+  printf '[package] %s\n' "$*"
+}
+
+run_with_heartbeat() {
+  local label="$1"
+  shift
+
+  local heartbeat_seconds="${PACKAGE_HEARTBEAT_SECONDS:-30}"
+  local started_at
+  started_at="$(date +%s)"
+
+  "$@" &
+  local cmd_pid=$!
+
+  # Emit periodic progress so CI logs do not look stuck during large checksum/tar work.
+  while kill -0 "$cmd_pid" 2>/dev/null; do
+    sleep "$heartbeat_seconds"
+    if kill -0 "$cmd_pid" 2>/dev/null; then
+      local now
+      now="$(date +%s)"
+      log "$label still running (elapsed $((now - started_at))s)"
+    fi
+  done
+
+  wait "$cmd_pid"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -31,6 +59,7 @@ SBOM_DIR="$PROJECT_ROOT/sbom"
 OUTPUT_DIR="$PROJECT_ROOT/artifacts"
 ARCHIVE_NAME=""
 KEEP_STAGING=0
+GZIP_LEVEL="${PACKAGE_GZIP_LEVEL:-1}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -85,6 +114,11 @@ if [[ ! -d "$DEPLOY_DIR" ]]; then
   exit 1
 fi
 
+if [[ ! "$GZIP_LEVEL" =~ ^[1-9]$ ]]; then
+  echo "Error: PACKAGE_GZIP_LEVEL must be an integer from 1-9 (got: $GZIP_LEVEL)" >&2
+  exit 2
+fi
+
 pick_latest() {
   local pattern="$1"
 
@@ -136,6 +170,11 @@ trap cleanup EXIT
 mkdir -p "$IMAGE_DIR" "$METADATA_DIR" "$OUTPUT_DIR"
 rm -f "$OUTPUT_DIR"/*.tar.gz "$OUTPUT_DIR"/*-manifest.json "$OUTPUT_DIR"/SHA256SUMS
 
+log "Packaging image=$IMAGE_NAME machine=$MACHINE"
+log "Deploy dir: $DEPLOY_DIR"
+log "Output dir: $OUTPUT_DIR"
+log "Compression level: gzip -$GZIP_LEVEL"
+
 copy_in() {
   local src="$1"
   local dst_dir="$2"
@@ -150,6 +189,11 @@ copy_in "$KERNEL_PATH" "$IMAGE_DIR"
 copy_in "$QEMUBOOT_CONF" "$METADATA_DIR"
 copy_in "$MANIFEST_PATH" "$METADATA_DIR"
 copy_in "$TESTDATA_PATH" "$METADATA_DIR"
+
+log "Selected rootfs: $(basename "$ROOTFS_PATH")"
+if [[ -n "$KERNEL_PATH" ]]; then
+  log "Selected kernel: $(basename "$KERNEL_PATH")"
+fi
 
 mapfile -t DTB_PATHS < <(find -L "$DEPLOY_DIR" -maxdepth 1 \( -type f -o -type l \) -name "*.dtb" | sort)
 if [[ ${#DTB_PATHS[@]} -gt 0 ]]; then
@@ -181,6 +225,7 @@ MANIFEST_JSON="$OUTPUT_DIR/${IMAGE_NAME}-${MACHINE}-manifest.json"
 
   first=1
   while IFS= read -r relative_path; do
+    log "Hashing payload/$relative_path"
     checksum="$(cd "$PAYLOAD_DIR" && sha256sum "$relative_path" | awk '{print $1}')"
     size_bytes="$(stat -c '%s' "$PAYLOAD_DIR/$relative_path")"
 
@@ -201,11 +246,13 @@ MANIFEST_JSON="$OUTPUT_DIR/${IMAGE_NAME}-${MACHINE}-manifest.json"
 cp "$MANIFEST_JSON" "$METADATA_DIR/manifest.json"
 
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_NAME"
-tar -C "$BUNDLE_ROOT" -czf "$ARCHIVE_PATH" payload
+log "Creating archive: $ARCHIVE_PATH"
+run_with_heartbeat "archive creation" tar -C "$BUNDLE_ROOT" -I "gzip -${GZIP_LEVEL}" -cf "$ARCHIVE_PATH" payload
 
 (
   cd "$OUTPUT_DIR"
-  sha256sum "$(basename "$ARCHIVE_PATH")" "$(basename "$MANIFEST_JSON")" > SHA256SUMS
+  log "Computing archive checksums"
+  run_with_heartbeat "checksum generation" sha256sum "$(basename "$ARCHIVE_PATH")" "$(basename "$MANIFEST_JSON")" > SHA256SUMS
 )
 
 echo "=== Release bundle created ==="
