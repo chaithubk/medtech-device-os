@@ -1,0 +1,24 @@
+[Unit]
+Description=First-Boot SSH Key Provisioning Setup
+Documentation=man:firstboot-ssh-setup(1)
+DefaultDependencies=no
+Before=getty@ttyAMA0.service
+ConditionFirstBoot=yes
+ConditionPathExists=!%h/.ssh/authorized_keys
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/firstboot-ssh-setup
+TimeoutStartSec=45s
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyAMA0
+RemainAfterExit=yes
+User=medadmin
+Group=medadmin
+ProtectSystem=no
+ProtectHome=no
+
+[Install]
+WantedBy=multi-user.target

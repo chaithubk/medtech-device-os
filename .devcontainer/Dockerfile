@@ -44,6 +44,13 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     debianutils \
     iputils-ping \
+    iproute2 \
+    net-tools \
+    lsof \
+    ripgrep \
+    jq \
+    tree \
+    less \
     xterm \
     screen \
     tmux \

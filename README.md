@@ -41,13 +41,16 @@ The script downloads the latest release, verifies checksums, boots QEMU, and
 ### 3. Connect
 
 ```bash
-ssh -p 2222 root@localhost
-# Password: root
+ssh -p 2222 medadmin@localhost
 ```
 
-- 📖 **Full guide:** [docs/QUICK_START_USER.md](docs/QUICK_START_USER.md)
-- 📋 **Commands:** [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)
-- 🔧 **Troubleshooting:** [docs/DEPLOYMENT_TROUBLESHOOTING.md](docs/DEPLOYMENT_TROUBLESHOOTING.md)
+SSH password auth is disabled by default. Provision your public key via
+`MEDTECH_ADMIN_AUTHORIZED_KEY` in `yocto/build/conf/local.conf` before building.
+
+- 📖 **Full guide:** [docs/getting-started/quick-start-user.md](docs/getting-started/quick-start-user.md)
+- 📋 **Commands:** [docs/reference/quick-reference.md](docs/reference/quick-reference.md)
+- 🔐 **SSH key setup:** [docs/guides/ssh-provisioning.md](docs/guides/ssh-provisioning.md)
+- 🧭 **All docs:** [docs/](docs/)
 
 ---
 
@@ -64,7 +67,7 @@ ssh -p 2222 root@localhost
 Ctrl+Shift+P → Dev Containers: Reopen in Container
 ```
 
-Setup runs automatically (`quick-setup.sh` clones Yocto layers, including meta-timesys, and initializes the build config).
+Setup runs automatically.
 
 ### 2. Build
 
@@ -72,19 +75,16 @@ Setup runs automatically (`quick-setup.sh` clones Yocto layers, including meta-t
 bitbake core-image-medtech
 ```
 
-The `bitbake` command is a wrapper that handles the root→builder privilege drop and
-Yocto environment setup automatically. See [`scripts/bitbake`](scripts/bitbake).
-
 ### 3. Boot and test
 
 ```bash
 bash scripts/run-qemu.sh
 ```
 
-- 📖 **Full guide:** [docs/QUICK_START_DEVELOPER.md](docs/QUICK_START_DEVELOPER.md)
-- 🏗 **Build options:** [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md)
-- 📦 **Layer structure:** [docs/LAYER_STRUCTURE.md](docs/LAYER_STRUCTURE.md)
-- 🧭 **Script purpose map:** [scripts/README.md](scripts/README.md)
+- 📖 **Full guide:** [docs/getting-started/quick-start-developer.md](docs/getting-started/quick-start-developer.md)
+- 🏗 **Build details:** [docs/guides/build-guide.md](docs/guides/build-guide.md)
+- 📦 **Layer structure:** [docs/reference/layer-structure.md](docs/reference/layer-structure.md)
+- 🧭 **All scripts:** [scripts/README.md](scripts/README.md)
 
 ---
 
@@ -98,6 +98,8 @@ The pipeline (`.github/workflows/device-build-smart.yml`) automatically:
 3. Packages the QEMU bundle (`package-release-artifacts.sh`)
 4. Creates a GitHub Release on `main` branch merges
 
+5. **Packages a private Vigiles bundle** (see below)
+
 ```bash
 # Package release bundle (used by CI)
 bash scripts/package-release-artifacts.sh --image-name core-image-medtech
@@ -106,8 +108,36 @@ bash scripts/package-release-artifacts.sh --image-name core-image-medtech
 bash scripts/verify-release-package.sh --image-name core-image-medtech
 ```
 
-- 📖 **CI details:** [docs/CI_CD.md](docs/CI_CD.md)
-- 🚀 **Release process:** [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md)
+- 📖 **CI details:** [docs/maintainers/ci-cd.md](docs/maintainers/ci-cd.md)
+- 🚀 **Release process:** [docs/maintainers/release-process.md](docs/maintainers/release-process.md)
+
+#### Private Vigiles Bundle
+
+The CI workflow creates a **separate, private artifact bundle** containing Vigiles vulnerability/configuration files:
+
+- `core-image-medtech-cve.json`
+- `linux-yocto-*.config`
+
+This bundle is uploaded as a separate artifact (`qemu-image-medtech-vigiles-private`), and is **not included in the public release**.
+
+**Encryption:**
+- If the repository secret `VIGILES_PRIVATE_BUNDLE_PASSPHRASE` is set, the private bundle is encrypted with AES-256 using OpenSSL.
+- Only someone with the passphrase can decrypt and access the contents.
+
+**How to set the passphrase:**
+1. Go to your repository's Settings → Secrets and variables → Actions.
+2. Add a new secret named `VIGILES_PRIVATE_BUNDLE_PASSPHRASE` with a strong, private value (e.g., a long random string).
+
+**How to decrypt:**
+Download the `.tar.gz.enc` file from the workflow artifacts and run:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -in core-image-medtech-qemuarm64-vigiles-private.tar.gz.enc -out core-image-medtech-qemuarm64-vigiles-private.tar.gz
+# Then extract:
+tar -xzf core-image-medtech-qemuarm64-vigiles-private.tar.gz
+```
+
+**Keep your passphrase secure!** Only those with the secret can access the private Vigiles bundle.
 
 ---
 
@@ -129,7 +159,7 @@ mosquitto.service
               └── medtech-clinician-ui.service
 ```
 
-- 📖 **Full architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 📖 **Full architecture:** [docs/reference/architecture-reference.md](docs/reference/architecture-reference.md)
 
 ---
 
@@ -182,19 +212,14 @@ cat /etc/medtech-release
 
 ---
 
-## Documentation Index
+## Documentation
+
+For complete guides, see **[docs/](docs/)** or the quick links above.
 
 | Audience | Document |
 |---|---|
-| Users | [docs/QUICK_START_USER.md](docs/QUICK_START_USER.md) |
-| Users | [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) |
-| Users | [docs/DEPLOYMENT_TROUBLESHOOTING.md](docs/DEPLOYMENT_TROUBLESHOOTING.md) |
-| Developers | [docs/QUICK_START_DEVELOPER.md](docs/QUICK_START_DEVELOPER.md) |
-| Developers | [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md) |
-| Developers | [docs/LAYER_STRUCTURE.md](docs/LAYER_STRUCTURE.md) |
-| Developers | [docs/RECIPES.md](docs/RECIPES.md) |
-| Developers | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Maintainers | [docs/CI_CD.md](docs/CI_CD.md) |
-| Maintainers | [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) |
-| All | [docs/README.md](docs/README.md) — documentation landing page |
-| All | [TESTING.md](TESTING.md) — test procedures |
+| Users | [Quick start](docs/getting-started/quick-start-user.md) \| [Reference](docs/reference/quick-reference.md) |
+| Developers | [Quick start](docs/getting-started/quick-start-developer.md) \| [Build guide](docs/guides/build-guide.md) \| [Recipes](docs/guides/recipes.md) |
+| Maintainers | [CI/CD](docs/maintainers/ci-cd.md) \| [Release](docs/maintainers/release-process.md) |
+| Reference | [Architecture](docs/reference/architecture-reference.md) \| [Layers](docs/reference/layer-structure.md) |
+| Testing | [Checklist](TESTING.md) |

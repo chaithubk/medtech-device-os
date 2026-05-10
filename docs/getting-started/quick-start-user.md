@@ -55,12 +55,11 @@ Checksum verification passed.
 ┌─────────────────────────────────────────────────────────────┐
 │               MedTech Device OS — QEMU Boot                 │
 ├─────────────────────────────────────────────────────────────┤
-│  Default Credentials                                         │
-│    Username : root                                           │
-│    Password : root                                           │
+│  Default Account                                              │
+│    Username : medadmin (SSH key required)                    │
 ├─────────────────────────────────────────────────────────────┤
 │  Access Methods                                              │
-│    SSH  : ssh -p 2222 root@localhost                         │
+│    SSH  : ssh -p 2222 medadmin@localhost                     │
 └─────────────────────────────────────────────────────────────┘
 
 === Booting QEMU ===
@@ -68,22 +67,28 @@ Waiting for SSH daemon on 127.0.0.1:2222 ...
   ✓ SSH daemon is responding
 
 Connect now:
-  ssh -p 2222 root@localhost
-  (password: root)
+  ssh -p 2222 medadmin@localhost
 ```
 
 ---
 
-## Step 2: Connect via SSH
+## Step 2: First-Boot SSH Key Provisioning
 
-Once the script shows "SSH daemon is responding":
+**Important:** On the first boot, you will be prompted on the serial console to provision your SSH public key.
 
-```bash
-ssh -p 2222 root@localhost
-# Password: root
-```
+See the complete guide: **[First-Boot SSH Key Provisioning](../guides/first-boot-setup.md)**
 
-You are now inside the MedTech Device OS running in QEMU.
+Quick summary:
+1. Log in to serial console with temporary password: `medadmin / medtech`
+2. First-boot setup will prompt for your SSH public key
+3. Paste your public key when prompted
+4. After provisioning, password login is permanently disabled
+5. Use SSH with your private key for all future access:
+   ```bash
+   ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
+   ```
+
+After SSH key provisioning, you are inside the MedTech Device OS running in QEMU.
 
 ---
 
@@ -165,12 +170,12 @@ bash scripts/download-and-run-qemu.sh --keep
 
 ### Copy a file into the VM:
 ```bash
-scp -P 2222 myfile.txt root@localhost:/tmp/
+scp -P 2222 myfile.txt medadmin@localhost:/tmp/
 ```
 
 ### Copy a file out of the VM:
 ```bash
-scp -P 2222 root@localhost:/var/log/syslog ./
+scp -P 2222 medadmin@localhost:/var/log/syslog ./
 ```
 
 ---
@@ -190,7 +195,7 @@ Each GitHub Release contains:
 ## Troubleshooting
 
 **SSH connection refused after boot:**
-→ See [DEPLOYMENT_TROUBLESHOOTING.md](DEPLOYMENT_TROUBLESHOOTING.md)
+→ See [../guides/deployment-troubleshooting.md](../guides/deployment-troubleshooting.md)
 
 **QEMU shows black screen / no output:**
 → Use `--console` flag for serial console access
@@ -205,6 +210,7 @@ Each GitHub Release contains:
 
 ## Next steps
 
-- **Copy-paste commands** → [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
-- **Troubleshooting guide** → [DEPLOYMENT_TROUBLESHOOTING.md](DEPLOYMENT_TROUBLESHOOTING.md)
-- **Build from source** → [QUICK_START_DEVELOPER.md](QUICK_START_DEVELOPER.md)
+- **Copy-paste commands** → [../reference/quick-reference.md](../reference/quick-reference.md)
+- **Troubleshooting guide** → [../guides/deployment-troubleshooting.md](../guides/deployment-troubleshooting.md)
+- **Build from source** → [quick-start-developer.md](quick-start-developer.md)
+- **SSH key setup** → [../guides/ssh-provisioning.md](../guides/ssh-provisioning.md)

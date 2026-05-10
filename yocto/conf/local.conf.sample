@@ -32,6 +32,13 @@ DISTRO_FEATURES:remove = "wayland x11 vulkan"
 # IPv4/IPv6 networking
 DISTRO_FEATURES:append = " ipv4 ipv6"
 
+# Remove unnecessary device/protocol stacks to reduce image bloat
+# - alsa: audio subsystem (not needed for medical IoT headless deployment)
+# - pcmcia: legacy PC card support
+# - usbgadget/usbhost: USB device/host stack (qemuarm64 uses virtio)
+# - nfs: network filesystem support (not needed for edge device)
+DISTRO_FEATURES:remove = "alsa pcmcia usbgadget usbhost nfs"
+
 # Downloads and sstate cache
 DL_DIR = "${TOPDIR}/../downloads"
 SSTATE_DIR = "${TOPDIR}/../sstate-cache"
@@ -72,6 +79,13 @@ DISABLE_STATIC = " --disable-static"
 # This prevents BitBake from building unnecessary development dependencies
 DISTRO_FEATURES:remove = "api-documentation doc"
 
+# Debug and diagnostic tools — exclude from production image
+# Trim BAD_RECOMMENDATIONS that sneak in via packagegroup-base and systemd defaults
+BAD_RECOMMENDATIONS:append = " systemd-analyze systemd-bash-completion kbd kbd-consolefonts \
+    ptest-runner bash-completion git rsync perl strace socat \
+    libical libmicrohttpd gnutls vala python3-pygobject python3-dbus \
+    btrfs-tools mdadm eudev-hwdb nfs-utils-client wpa-supplicant"
+
 # Disable locale payload bloat
 IMAGE_LINGUAS = ""
 ENABLE_BINARY_LOCALE_GENERATION = "0"
@@ -81,7 +95,9 @@ INHERIT += "rm_work"
 RM_WORK_EXCLUDE += "core-image-medtech"
 
 # Timesys Vigiles SBOM assessment (free tier)
-INHERIT += "vigiles"
+# Set MEDTECH_ENABLE_VIGILES to "1" to enable on-demand (default: disabled for faster CI)
+MEDTECH_ENABLE_VIGILES ?= "0"
+INHERIT:append = "${@' vigiles' if (d.getVar('MEDTECH_ENABLE_VIGILES') or '').strip().lower() in ('1', 'true', 'yes', 'on') else ''}"
 
 # Keep git fetches shallow where supported
 BB_GIT_SHALLOW = "1"
@@ -165,5 +181,28 @@ BAD_RECOMMENDATIONS:append = " bash-completion bluez5 btrfs-tools curl kbd mosqu
 # ============================================================
 # Buildhistory — feeds size ranking in audit-image-deps.sh
 # ============================================================
-INHERIT += "buildhistory"
+# Set MEDTECH_ENABLE_BUILDHISTORY to "1" for on-demand analysis (default: disabled for faster CI)
+MEDTECH_ENABLE_BUILDHISTORY ?= "0"
+INHERIT:append = "${@' buildhistory' if (d.getVar('MEDTECH_ENABLE_BUILDHISTORY') or '').strip().lower() in ('1', 'true', 'yes', 'on') else ''}"
 BUILDHISTORY_COMMIT = "0"
+
+# ============================================================
+# Access provisioning (required for SSH login)
+# ============================================================
+# The image locks root login and disables SSH password authentication.
+# Provide one SSH public key line for the managed admin account (medadmin).
+#
+# AUTO-DETECT (recommended for dev container):
+#   Store your SSH public key in .secrets/medtech-admin-key.pub
+#   The build system will auto-detect and use it.
+#   Example:
+#     echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@example.com" > .secrets/medtech-admin-key.pub
+#
+# MANUAL OVERRIDE (if needed):
+#   Set MEDTECH_ADMIN_AUTHORIZED_KEY directly here:
+#     MEDTECH_ADMIN_AUTHORIZED_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@example.com"
+#
+# IMPORTANT:
+#   - Store actual keys in .secrets/ (not in git)
+#   - A template file was created at .secrets/medtech-admin-key.pub
+#   - If not set, SSH login will be disabled (by design)

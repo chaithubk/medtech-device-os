@@ -26,6 +26,8 @@ ENABLE_BINARY_LOCALE_GENERATION = "0"
 MEDTECH_CORE_PKGS = " \
     systemd \
     openssh \
+    sudo \
+    firstboot-ssh-setup \
 "
 
 # Python runtime for services
@@ -120,6 +122,7 @@ PACKAGE_EXCLUDE += "\
     libical \
     libmicrohttpd \
     mosquitto-clients \
+    systemd-analyze \
     gnome-desktop-testing \
     python3-pygobject \
     python3-dbus \
@@ -134,10 +137,59 @@ PACKAGE_EXCLUDE += "\
 # qemuarm64 + ext4 + virtio is enough for the CI image.
 KERNEL_MODULE_AUTOLOAD = ""
 
-# QEMU/dev convenience: set a deterministic root password for console and SSH login.
-# NOTE: change this for production images.
-# Password is: root
-EXTRA_USERS_PARAMS = "usermod -p '\$6\$medtech\$740u6fNedx0nA9SngnkoyPLK4CzMswgec09ev5wJsPFH4GEOW4QN3oyLdS8f6wphE7Ub7i9.oqjez8ss75nue/' root;"
+# ---------------------------------------------------------------------------
+# Access management defaults (production-oriented)
+# ---------------------------------------------------------------------------
+# No static root credentials are baked into the image.
+# - root account is locked for password authentication
+# - SSH password authentication is disabled in the OpenSSH drop-in
+# - dedicated admin account is key-based and has root-equivalent privileges
+
+MEDTECH_ADMIN_USER ?= "medadmin"
+# Supply one SSH public key line in local.conf, for example:
+# MEDTECH_ADMIN_AUTHORIZED_KEY = "ssh-ed25519 AAAAC3Nza... you@example.com"
+MEDTECH_ADMIN_AUTHORIZED_KEY ?= ""
+# Local developer default key file (not committed to git)
+MEDTECH_ADMIN_KEY_FILE ?= "/workspace/.secrets/medtech-admin-key.pub"
+# `usermod -p` requires a pre-hashed value. Keep medadmin locked by default.
+# First-boot SSH provisioning runs on serial console and enables key-based access.
+MEDTECH_ADMIN_PASSWORD_HASH ?= "*"
+
+EXTRA_USERS_PARAMS = " \
+    useradd -m -d /home/${MEDTECH_ADMIN_USER} -s /bin/sh ${MEDTECH_ADMIN_USER}; \
+    usermod -p '${MEDTECH_ADMIN_PASSWORD_HASH}' ${MEDTECH_ADMIN_USER}; \
+    groupadd -f systemd-journal; \
+    usermod -a -G adm,systemd-journal,sudo ${MEDTECH_ADMIN_USER}; \
+    usermod -p '!' root; \
+"
+
+python () {
+    import os
+
+    key = (d.getVar('MEDTECH_ADMIN_AUTHORIZED_KEY') or '').strip()
+    key_file = (d.getVar('MEDTECH_ADMIN_KEY_FILE') or '').strip()
+
+    if key:
+        return
+
+    file_key = ''
+    if key_file and os.path.exists(key_file):
+        try:
+            with open(key_file, 'r', encoding='utf-8') as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if 'REPLACE_WITH_MEDTECH_ADMIN_PUBLIC_KEY' in line:
+                        continue
+                    file_key = line
+                    break
+        except OSError:
+            pass
+
+    if not file_key:
+        bb.warn('No MedTech admin SSH key found (MEDTECH_ADMIN_AUTHORIZED_KEY empty and MEDTECH_ADMIN_KEY_FILE missing/placeholder). SSH login will remain disabled until a public key is provisioned.')
+}
 
 IMAGE_ROOTFS_SIZE = "524288"
 IMAGE_OVERHEAD_FACTOR = "1.5"
@@ -155,8 +207,8 @@ SPDX_INCLUDE_SOURCES = "0"
 MEDTECH_IMAGE_VERSION ?= "1.0.0"
 MEDTECH_IMAGE_NAME ?= "core-image-medtech"
 
-# Stamp release info into the rootfs
-IMAGE_PREPROCESS_COMMAND:append = " medtech_stamp_release; "
+# Stamp release info and apply local account/SSH provisioning.
+IMAGE_PREPROCESS_COMMAND:append = " medtech_stamp_release; medtech_provision_admin_key; medtech_configure_sudo; "
 
 medtech_stamp_release() {
     install -d ${IMAGE_ROOTFS}/etc
@@ -167,6 +219,33 @@ MEDTECH_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 MEDTECH_MACHINE="${MACHINE}"
 MEDTECH_DISTRO="${DISTRO}"
 EOF
+}
+
+medtech_provision_admin_key() {
+    local admin_home="${IMAGE_ROOTFS}/home/${MEDTECH_ADMIN_USER}"
+    local key="${MEDTECH_ADMIN_AUTHORIZED_KEY}"
+    local key_file="${MEDTECH_ADMIN_KEY_FILE}"
+
+    # Prefer explicit local.conf override; otherwise read first usable key line
+    # from the local .secrets file and ignore comments/placeholders.
+    if [ -z "$key" ] && [ -f "$key_file" ]; then
+        key="$(sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$key_file" | grep -v 'REPLACE_WITH_MEDTECH_ADMIN_PUBLIC_KEY' | head -n 1 || true)"
+    fi
+
+    if [ -n "$key" ]; then
+        install -d -m 0700 "$admin_home/.ssh"
+        printf '%s\n' "$key" > "$admin_home/.ssh/authorized_keys"
+        chmod 0600 "$admin_home/.ssh/authorized_keys"
+        chown -R ${MEDTECH_ADMIN_USER}:${MEDTECH_ADMIN_USER} "$admin_home/.ssh"
+    fi
+}
+
+medtech_configure_sudo() {
+    install -d ${IMAGE_ROOTFS}/etc/sudoers.d
+    cat > ${IMAGE_ROOTFS}/etc/sudoers.d/90-medtech-admin << EOF
+${MEDTECH_ADMIN_USER} ALL=(ALL) NOPASSWD:ALL
+EOF
+    chmod 0440 ${IMAGE_ROOTFS}/etc/sudoers.d/90-medtech-admin
 }
 
 

@@ -13,6 +13,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=edge-analytics
 EnvironmentFile=/etc/medtech/edge-analytics.env
+Environment=MEDTECH_VITALS_SCHEMA=/usr/share/medtech/contracts/vitals/current.json
 User=root
 
 [Install]

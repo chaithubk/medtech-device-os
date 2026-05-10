@@ -23,7 +23,7 @@ Options:
 
 Default behavior:
   - Launches QEMU with serial console attached to this terminal
-  - SSH is optional / secondary via: ssh -p 2222 root@localhost
+  - SSH is optional / secondary via: ssh -p 2222 medadmin@localhost
 EOF
 }
 
@@ -299,8 +299,8 @@ echo "============================================================"
 echo "Release  : $RESOLVED_TAG"
 echo "Memory   : ${MEMORY_MB} MB"
 echo "Mode     : $([[ "$BACKGROUND" -eq 1 ]] && echo background/ssh || echo serial-console)"
-echo "SSH      : ssh -p 2222 root@localhost"
-echo "SCP      : scp -P 2222 file root@localhost:/path/"
+echo "SSH      : ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost"
+echo "SCP      : scp -P 2222 file medadmin@localhost:/path/"
 echo "============================================================"
 echo
 
@@ -344,7 +344,7 @@ if [[ "$NO_WAIT_SSH" -eq 0 ]]; then
       log "SSH daemon is responding"
       echo
       echo "Connect now:"
-      echo "  ssh -p 2222 root@localhost"
+      echo "  ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost"
       echo
       break
     fi

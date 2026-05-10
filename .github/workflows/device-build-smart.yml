@@ -8,17 +8,51 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version to use (e.g. v1.2.0). Leave blank to auto-increment from the latest git tag.'
+        description: 'Optional release version to use (e.g. v1.2.0). Leave blank to create a dev-<sha> prerelease for manual runs.'
         required: false
         default: ''
       spdx_enabled:
-        description: 'Enable Yocto SPDX generation (create-spdx) for this run.'
+        description: 'Enable Yocto SPDX generation (create-spdx) for this run (default: disabled for faster CI).'
         required: false
         default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      vigiles_enabled:
+        description: 'Enable Timesys Vigiles vulnerability scanning (default: disabled for faster CI).'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      buildhistory_enabled:
+        description: 'Enable buildhistory for package size analysis (default: disabled for faster CI).'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      ssh_access_mode:
+        description: 'SSH access policy for this build: public-hardened (no baked admin key) or internal-keyed (bake key from secret).'
+        required: false
+        default: 'public-hardened'
+        type: choice
+        options:
+          - public-hardened
+          - internal-keyed
+
+concurrency:
+  group: smart-device-os-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CI_BUILD_IMAGE: core-image-medtech
   SPDX_ENABLED: ${{ github.event.inputs.spdx_enabled || 'false' }}
+  VIGILES_ENABLED: ${{ github.event.inputs.vigiles_enabled || 'false' }}
+  BUILDHISTORY_ENABLED: ${{ github.event.inputs.buildhistory_enabled || 'false' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -39,8 +73,9 @@ jobs:
           SKIP_BUILD=true  # Default: skip unless build-affecting changes found
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
-                      || git diff --name-only HEAD~1 HEAD)
+            CHANGED=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" 2>/dev/null \
+                      || git diff --name-only "origin/${{ github.base_ref }}"...HEAD 2>/dev/null \
+                      || echo "")
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             BEFORE="${{ github.event.before }}"
             # All-zeros = initial push or force-push; treat as full build
@@ -57,23 +92,25 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
-          # Trigger build only when Yocto sources/config change.
-          # This intentionally ignores docs/scripts/tests/workflow edits to avoid
-          # expensive image builds unless yocto/ content changes.
+          # Skip the image build when every changed file is in a non-build path:
+          #   .github/workflows/  — workflow definitions
+          #   docs/               — documentation directory
+          #   *.md at any level   — markdown files (README, TESTING, etc.)
+          # NOTE: shell scripts are treated as build-affecting because they
+          # participate directly in CI build/release flow.
           if [[ -z "$CHANGED" ]]; then
-            # No changes detected (e.g., workflow_dispatch, initial push) → always build
+            # No diff context available (workflow_dispatch / initial push) -> full build.
             SKIP_BUILD=false
           else
-            BUILD_AFFECTING=$(echo "$CHANGED" | grep -E \
-              '^yocto/' || true)
+            BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
+              '^(\.github/workflows/|docs/|[^/]+\.md$|.+\.md$)' || true)
             if [[ -n "$BUILD_AFFECTING" ]]; then
               SKIP_BUILD=false
             fi
           fi
 
           echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Build-affecting files (yocto/**):"
-          echo "${BUILD_AFFECTING:-<none>}"
+          echo "Build-affecting files:"
           echo "Result: skip_build=$SKIP_BUILD (Build affected: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
 
   # ── 2a. Non-build-affecting changes: validate YAML, skip image build ────────
@@ -225,7 +262,9 @@ jobs:
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
           echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\"" >> conf/local.conf
-          echo "SPDX generation toggle set to: ${SPDX_ENABLED}"
+          echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\"" >> conf/local.conf
+          echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\"" >> conf/local.conf
+          echo "Optional features: SPDX=${SPDX_ENABLED} Vigiles=${VIGILES_ENABLED} buildhistory=${BUILDHISTORY_ENABLED}"
 
           echo "# GitHub-hosted runners do not persist build cache between jobs" >> conf/local.conf
           echo "Build directory initialized"
@@ -256,9 +295,14 @@ jobs:
         env:
           VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
         run: |
+          if [[ "${VIGILES_ENABLED}" != "true" ]]; then
+            echo "Vigiles is disabled (VIGILES_ENABLED=${VIGILES_ENABLED}). Skipping key configuration."
+            exit 0
+          fi
+
           if [[ -z "${VIGILES_KEY_DATA}" ]]; then
-            echo "VIGILES_KEY_DATA is not set. Continuing without Vigiles credentials."
-            echo "Vulnerability report generation may be unavailable for this run."
+            echo "WARNING: Vigiles enabled but VIGILES_KEY_DATA is not set."
+            echo "Vulnerability report generation will be unavailable for this run."
             exit 0
           fi
 
@@ -266,18 +310,84 @@ jobs:
           printf '%s' "${VIGILES_KEY_DATA}" > "${KEY_FILE}"
           chmod 600 "${KEY_FILE}"
           echo "VIGILES_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
-          echo "Vigiles key file configured"
+          echo "Vigiles key file configured and enabled"
+
+      - name: Configure SSH access mode
+        id: ssh_access
+        env:
+          SSH_ACCESS_MODE_INPUT: ${{ github.event.inputs.ssh_access_mode }}
+          MEDTECH_ADMIN_SSH_PUBLIC_KEY: ${{ secrets.MEDTECH_ADMIN_SSH_PUBLIC_KEY }}
+        run: |
+          MODE="public-hardened"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${SSH_ACCESS_MODE_INPUT:-}" ]]; then
+            MODE="${SSH_ACCESS_MODE_INPUT}"
+          fi
+
+          case "$MODE" in
+            public-hardened|internal-keyed)
+              ;;
+            *)
+              echo "Invalid ssh_access_mode: $MODE"
+              exit 2
+              ;;
+          esac
+
+          echo "SSH_ACCESS_MODE=${MODE}" >> "${GITHUB_ENV}"
+          echo "mode=${MODE}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "$MODE" == "public-hardened" ]]; then
+            echo "Public hardened mode selected: no admin SSH key will be baked into the image."
+            exit 0
+          fi
+
+          if [[ -z "${MEDTECH_ADMIN_SSH_PUBLIC_KEY:-}" ]]; then
+            echo "internal-keyed mode requires GitHub secret MEDTECH_ADMIN_SSH_PUBLIC_KEY."
+            exit 1
+          fi
+
+          KEY_FILE="$(mktemp "${RUNNER_TEMP}/medtech-admin-key-XXXXXX.pub")"
+          printf '%s\n' "${MEDTECH_ADMIN_SSH_PUBLIC_KEY}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+
+          KEY_LINE="$(grep -v '^[[:space:]]*#' "${KEY_FILE}" | sed '/^[[:space:]]*$/d' | head -n 1 || true)"
+          if [[ -z "${KEY_LINE}" ]]; then
+            echo "MEDTECH_ADMIN_SSH_PUBLIC_KEY secret is empty after filtering comments/blank lines."
+            exit 1
+          fi
+
+          if ! printf '%s\n' "${KEY_LINE}" | grep -Eq '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) '; then
+            echo "MEDTECH_ADMIN_SSH_PUBLIC_KEY does not look like a valid SSH public key line."
+            exit 1
+          fi
+
+          printf '%s\n' "${KEY_LINE}" > "${KEY_FILE}"
+          echo "MEDTECH_ADMIN_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
+          echo "Internal keyed mode selected: admin SSH public key file configured."
 
       - name: Apply CI local.conf toggles
         run: |
           LOCAL_CONF="yocto/build/conf/local.conf"
 
-          if [[ -n "${VIGILES_KEY_FILE:-}" ]]; then
+          # Vigiles: enable only if explicitly requested AND key is available
+          if [[ "${VIGILES_ENABLED}" == "true" && -n "${VIGILES_KEY_FILE:-}" ]]; then
             echo "VIGILES_KEY_FILE = \"${VIGILES_KEY_FILE}\"" >> "${LOCAL_CONF}"
-            echo "Configured local.conf to use workflow-provided Vigiles key file."
+            echo "Vigiles enabled and key file configured."
           else
-            echo "VIGILES_DISABLE_CHECK = \"1\"" >> "${LOCAL_CONF}"
-            echo "No Vigiles key configured; disabled Vigiles online check for this run."
+            echo "# Vigiles disabled (VIGILES_ENABLED=${VIGILES_ENABLED}, key available: $([[ -n \"${VIGILES_KEY_FILE:-}\" ]] && echo yes || echo no))" >> "${LOCAL_CONF}"
+            echo "Vigiles vulnerability scanning disabled for this build."
+          fi
+
+          if [[ "${SSH_ACCESS_MODE:-public-hardened}" == "internal-keyed" ]]; then
+            if [[ -z "${MEDTECH_ADMIN_KEY_FILE:-}" ]]; then
+              echo "Internal keyed mode selected but MEDTECH_ADMIN_KEY_FILE is unset."
+              exit 1
+            fi
+            echo "MEDTECH_ADMIN_KEY_FILE = \"${MEDTECH_ADMIN_KEY_FILE}\"" >> "${LOCAL_CONF}"
+            echo "Configured local.conf with workflow-provided MedTech admin SSH key file."
+          else
+            echo "MEDTECH_ADMIN_AUTHORIZED_KEY = \"\"" >> "${LOCAL_CONF}"
+            echo "MEDTECH_ADMIN_KEY_FILE = \"/nonexistent/medtech-admin-key.pub\"" >> "${LOCAL_CONF}"
+            echo "Public hardened mode enforced: image will ship without a baked admin SSH key."
           fi
 
       - name: Yocto preflight (fast-fail metadata and URI checks)
@@ -497,17 +607,25 @@ jobs:
           } > artifacts/spdx-status.txt
 
       - name: Collect Timesys Vigiles vulnerability report
+        if: env.VIGILES_ENABLED == 'true'
         run: |
           MACHINE="qemuarm64"
           mkdir -p artifacts/vigiles
 
-          mapfile -t REPORTS < <(find yocto/build/tmp/deploy -type f \
+          mapfile -t DEPLOY_REPORTS < <(find yocto/build/tmp/deploy -type f \
             \( -iname '*vigiles*' -o -iname '*timesys*' -o -iname '*vuln*' -o -iname '*cve*' \) \
             \( -iname '*.json' -o -iname '*.csv' -o -iname '*.txt' -o -iname '*.xml' -o -iname '*.html' \) \
             2>/dev/null | sort)
 
+          mapfile -t VIGILES_OUTPUTS < <(find yocto/build/vigiles -maxdepth 1 -type f \
+            \( -name 'core-image-medtech-cve.json' -o -name 'linux-yocto-*.config' \) \
+            2>/dev/null | sort)
+
+          REPORTS=("${DEPLOY_REPORTS[@]}" "${VIGILES_OUTPUTS[@]}")
+          mapfile -t REPORTS < <(printf '%s\n' "${REPORTS[@]}" | sed '/^$/d' | sort -u)
+
           if [[ ${#REPORTS[@]} -eq 0 ]]; then
-            echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy"
+            echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy or yocto/build/vigiles"
             echo "Check that conf/local.conf includes: INHERIT += \"vigiles\""
             echo "And verify the VIGILES_KEY_DATA secret contains a valid key payload."
             {
@@ -532,39 +650,122 @@ jobs:
           echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
 
       - name: Package release bundle
+        timeout-minutes: 45
         run: |
-          echo "=== Packaging release bundle (max 6m) ==="
+          set -euo pipefail
           export PACKAGE_GZIP_LEVEL=1
           export PACKAGE_HEARTBEAT_SECONDS=30
 
-          if ! timeout --signal=TERM --kill-after=15s 6m \
-            bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"; then
-            status=$?
-            if [ "$status" -eq 124 ]; then
-              echo "Packaging timed out after 6 minutes"
+          for attempt in 1 2; do
+            echo "=== Package release bundle (attempt ${attempt}/2) ==="
+            if timeout 45m bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"; then
+              echo "Package release bundle succeeded"
+              break
             fi
-            exit "$status"
-          fi
+
+            if [[ "$attempt" -eq 2 ]]; then
+              echo "Package release bundle failed after retries"
+              exit 1
+            fi
+
+            echo "Package release bundle failed; cleaning artifacts directory before retry"
+            rm -rf artifacts/*
+          done
 
       - name: Verify release bundle
+        timeout-minutes: 15
         run: |
-          bash scripts/verify-release-package.sh --image-name "${CI_BUILD_IMAGE}"
+          set -euo pipefail
+          for attempt in 1 2; do
+            echo "=== Verify release bundle (attempt ${attempt}/2) ==="
+            if timeout 15m bash scripts/verify-release-package.sh --image-name "${CI_BUILD_IMAGE}"; then
+              echo "Verify release bundle succeeded"
+              break
+            fi
+
+            if [[ "$attempt" -eq 2 ]]; then
+              echo "Verify release bundle failed after retries"
+              exit 1
+            fi
+
+            echo "Verify release bundle failed; retrying"
+          done
+
+      - name: Prepare private Vigiles bundle
+        if: env.VIGILES_ENABLED == 'true'
+        env:
+          VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-artifacts
+
+          if [[ ! -d artifacts/vigiles ]]; then
+            echo "No artifacts/vigiles directory found; skipping private bundle creation."
+            exit 0
+          fi
+
+          if [[ -z "$(find artifacts/vigiles -type f 2>/dev/null)" ]]; then
+            echo "No Vigiles files available; skipping private bundle creation."
+            exit 0
+          fi
+
+          PRIVATE_TAR="private-artifacts/core-image-medtech-qemuarm64-vigiles-private.tar.gz"
+          tar -czf "${PRIVATE_TAR}" -C artifacts vigiles
+
+          if [[ -n "${VIGILES_PRIVATE_BUNDLE_PASSPHRASE:-}" ]]; then
+            openssl enc -aes-256-cbc -pbkdf2 -salt \
+              -in "${PRIVATE_TAR}" \
+              -out "${PRIVATE_TAR}.enc" \
+              -pass env:VIGILES_PRIVATE_BUNDLE_PASSPHRASE
+            rm -f "${PRIVATE_TAR}"
+            echo "Created encrypted private Vigiles bundle: ${PRIVATE_TAR}.enc"
+          else
+            echo "VIGILES_PRIVATE_BUNDLE_PASSPHRASE is not set; private Vigiles bundle remains unencrypted."
+          fi
+
+      - name: Exclude private Vigiles files from public artifacts
+        if: env.VIGILES_ENABLED == 'true'
+        run: |
+          rm -rf artifacts/vigiles
 
       - name: Finalize upload directory
         run: |
+          set -euo pipefail
+          REQUIRED=(
+            "artifacts/${CI_BUILD_IMAGE}-qemuarm64-bundle.tar.gz"
+            "artifacts/${CI_BUILD_IMAGE}-qemuarm64-manifest.json"
+            "artifacts/SHA256SUMS"
+          )
+
+          for f in "${REQUIRED[@]}"; do
+            if [[ ! -f "$f" ]]; then
+              echo "Missing required release artifact: $f"
+              exit 1
+            fi
+          done
+
           echo "=== ARTIFACTS READY ==="
           ls -lh artifacts/
           du -sh artifacts/
           rm -rf yocto
 
+      - name: Upload private Vigiles bundle
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: qemu-image-medtech-vigiles-private
+          path: private-artifacts/
+          retention-days: 14
+          if-no-files-found: warn
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        if: always()
+        if: success()
         with:
           name: qemu-image-medtech
           path: artifacts/
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
 
 
       # === Create GitHub Release with QEMU artifacts ===
@@ -582,8 +783,11 @@ jobs:
             # Explicit version provided via workflow_dispatch input.
             NEXT_TAG="$MANUAL_VERSION"
             echo "Using manually specified version: $NEXT_TAG"
-          else
-            # Auto-increment from the latest vX.Y.Z git tag (push to main or blank dispatch).
+            echo "tag=$NEXT_TAG"    >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # Auto-increment production semver on push to main.
             git fetch --tags --quiet
             LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
             if [[ -z "$LATEST" ]]; then
@@ -595,14 +799,18 @@ jobs:
               NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
             fi
             echo "Previous tag: ${LATEST:-<none>}  →  Next tag: $NEXT_TAG"
+            echo "tag=$NEXT_TAG"        >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"     >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"     >> "$GITHUB_OUTPUT"
+          else
+            # Manual run without explicit version -> unique prerelease tag.
+            echo "tag=dev-${{ github.sha }}-r${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "tag=$NEXT_TAG"    >> "$GITHUB_OUTPUT"
-          echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          echo "make_latest=true" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release with Artifacts
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -616,6 +824,11 @@ jobs:
             - Commit: ${{ github.sha }}
             - Branch: ${{ github.ref_name }}
             - Image: core-image-medtech-qemuarm64
+            - SSH access mode: ${{ steps.ssh_access.outputs.mode }}
+
+            **SSH Access Policy**
+            - `public-hardened`: no default admin SSH key is baked into the image.
+            - `internal-keyed`: login is `ssh -i <matching-private-key> -p 2222 medadmin@localhost`.
 
             **Quick Start** (no Docker required):
             ```bash
@@ -631,11 +844,14 @@ jobs:
           generate_release_notes: true
           make_latest: ${{ steps.release_meta.outputs.make_latest }}
 
-      - name: Cleanup Vigiles key file
+      - name: Cleanup temporary key files
         if: always()
         run: |
           if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
             rm -f "${VIGILES_KEY_FILE}"
+          fi
+          if [[ -n "${MEDTECH_ADMIN_KEY_FILE:-}" && -f "${MEDTECH_ADMIN_KEY_FILE}" ]]; then
+            rm -f "${MEDTECH_ADMIN_KEY_FILE}"
           fi
 
       - name: Final disk report

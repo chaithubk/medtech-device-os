@@ -1,19 +1,15 @@
 # openssh_%.bbappend — MedTech QEMU/dev SSH policy
 #
-# Installs an sshd_config.d drop-in that enables password-based root login for
-# local QEMU developer workflows.  Serial console remains the primary access
-# path; SSH on 127.0.0.1:2222 is a working secondary access path.
+# Installs an sshd_config.d drop-in that enforces key-only SSH access with
+# root login disabled. This keeps the baseline secure in both QEMU and
+# production deployments.
 #
-# Why this recipe?  The base Yocto openssh package ships with a conservative
-# sshd_config (PermitRootLogin prohibit-password in modern OpenSSH), which
-# blocks password authentication for root even though EXTRA_USERS_PARAMS in
-# medtech-image.bbclass sets a valid password hash.  Adding a drop-in under
-# /etc/ssh/sshd_config.d/ is the minimal, forward-compatible fix — it does not
-# touch the upstream default config file and is easy to override or remove for
-# production hardening.
+# Why this recipe?  A dedicated drop-in under /etc/ssh/sshd_config.d/ is the
+# minimal, forward-compatible way to apply image policy without modifying
+# upstream sshd_config directly.
 #
-# Security note: this permissive policy is intentional for a loopback-only QEMU
-# guest.  See the file itself for the full security scope statement.
+# Security note: account provisioning is handled by medtech-image.bbclass,
+# which locks root and provisions a dedicated admin account for key-based SSH.
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 

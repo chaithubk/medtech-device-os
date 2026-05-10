@@ -52,28 +52,6 @@ That's it. The `bitbake` wrapper automatically:
 > **First build takes 60–120 minutes** as it compiles everything from source.
 > Subsequent builds with unchanged recipes take a few minutes (sstate cache).
 
-### What you'll see during the build
-
-```
-Loading cache: 100% |########| Time: 0:00:02
-Loaded 1234 entries from dependency cache.
-NOTE: Resolving any missing task queue dependencies
-
-Build Configuration:
-BB_VERSION           = "2.0.0"
-BUILD_SYS            = "x86_64-linux"
-TARGET_SYS           = "aarch64-poky-linux"
-MACHINE              = "qemuarm64"
-DISTRO               = "poky"
-...
-
-Initialising tasks: 100% |########| Time: 0:00:05
-Sstate summary: ...
-NOTE: Executing Tasks
-...
-NOTE: Tasks Summary: ...
-```
-
 ### Build single recipes (faster iteration)
 
 ```bash
@@ -98,33 +76,34 @@ bash scripts/run-qemu.sh
 
 This launches QEMU with the just-built image. The terminal becomes the QEMU serial console.
 
-**Default login (serial console):**
-- Username: `root`
-- Password: `root`
+**Default login policy:**
+- Root password login is disabled
+- SSH password authentication is disabled
+- Managed admin account: `medadmin` (SSH key required)
 
 **SSH from another terminal on your host:**
 ```bash
-ssh -p 2222 root@localhost
-# Password: root
+ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
 ```
+
+> **SSH key provisioning required:** Before SSH will work, you must add your public key
+> to `.secrets/medtech-admin-key.pub` and rebuild. See the full guide at
+> [../guides/ssh-provisioning.md](../guides/ssh-provisioning.md) or quick start:
+> ```bash
+> cat ~/.ssh/id_medtech.pub > .secrets/medtech-admin-key.pub
+> bitbake -c cleansstate core-image-medtech && bitbake core-image-medtech
+> bash scripts/run-qemu.sh
+> ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
+> ```
 
 **SCP file transfer:**
 ```bash
 # Copy a file into the VM
-scp -P 2222 localfile.txt root@localhost:/tmp/
+scp -P 2222 localfile.txt medadmin@localhost:/tmp/
 
 # Copy a file out of the VM
-scp -P 2222 root@localhost:/etc/medtech-release ./
+scp -P 2222 medadmin@localhost:/etc/medtech-release ./
 ```
-
-> **SSH access policy:** The image includes `/etc/ssh/sshd_config.d/10-medtech-dev.conf`
-> (installed by `openssh_%.bbappend` in `meta-medtech`) which enables
-> `PermitRootLogin yes` and `PasswordAuthentication yes`.  This is intentional for a
-> loopback-only QEMU guest.  The root password is set to `root` via `EXTRA_USERS_PARAMS`
-> in `medtech-image.bbclass`.  Change both for any production deployment.
->
-> See [DEPLOYMENT_TROUBLESHOOTING.md](DEPLOYMENT_TROUBLESHOOTING.md) for the full SSH
-> policy rationale and hardening guidance.
 
 ---
 
@@ -197,21 +176,12 @@ bash scripts/verify-release-package.sh --image-name core-image-medtech
 ```
 medtech-device-os/
 ├── .devcontainer/           # Dev container configuration
-│   ├── Dockerfile           # Container image definition
-│   └── devcontainer.json    # VS Code dev container settings
 ├── .github/workflows/       # CI/CD pipeline
-│   └── device-build-smart.yml
 ├── docs/                    # All documentation
 ├── scripts/                 # Build, test, and utility scripts
-│   ├── bitbake              # BitBake wrapper (root→builder, env setup)
-│   ├── run-qemu.sh          # Boot locally-built image
-│   └── download-and-run-qemu.sh  # Download & run GitHub Release
 ├── yocto/
-│   ├── conf/                # CI bblayers.conf.sample and local.conf.sample
+│   ├── conf/                # Build configuration samples
 │   └── meta-medtech/        # Custom Yocto layer
-│       ├── conf/layer.conf
-│       ├── classes/
-│       └── recipes-*/       # All custom recipes
 └── README.md
 ```
 
@@ -219,34 +189,20 @@ medtech-device-os/
 
 ## Understanding the `bitbake` wrapper
 
-The `scripts/bitbake` file is not the real BitBake binary — it's a wrapper script
-that lives in `/workspace/scripts/`, which is prepended to `PATH` in the container.
+The `scripts/bitbake` file is not the real BitBake binary — it's a wrapper that
+handles privileges and environment setup automatically.
 
 When you type `bitbake`, the wrapper:
-1. Checks whether the build environment is initialized (bblayers.conf exists, layers are present)
-2. If not, runs `quick-setup.sh` automatically
-3. If running as root, switches to the `builder` user (BitBake refuses root)
-4. Sources `oe-init-build-env` to activate the Yocto environment
-5. Executes the real BitBake with all your arguments
+1. Checks whether the build environment is initialized
+2. If running as root, switches to the `builder` user (BitBake refuses root)
+3. Sources `oe-init-build-env` to activate the Yocto environment
+4. Executes the real BitBake with all your arguments
 
-**You never need to think about this** — it just works. See `scripts/bitbake` for the implementation.
+**You never need to think about this** — it just works.
 
 ---
 
 ## Troubleshooting builds
-
-### "Do not use Bitbake as root"
-
-This should never happen with the wrapper. If it does:
-```bash
-# Check who you are
-id
-# Switch to builder manually
-su - builder
-cd /workspace
-source yocto/poky/oe-init-build-env yocto/build
-bitbake core-image-medtech
-```
 
 ### Build fails with fetch errors
 
@@ -256,10 +212,6 @@ bitbake -v core-image-medtech
 
 # Check connectivity
 ping -c1 github.com
-
-# Clear download cache for a specific recipe
-bitbake -c cleanall medtech-vitals-publisher
-bitbake medtech-vitals-publisher
 ```
 
 ### Out of disk space
@@ -268,14 +220,10 @@ Check usage:
 ```bash
 df -h
 du -sh yocto/build/tmp/
-```
-
-Clean work directories:
-```bash
 rm -rf yocto/build/tmp/work/
 ```
 
-See [DISK_OPTIMIZATION.md](DISK_OPTIMIZATION.md) for more strategies.
+See [../guides/disk-optimization.md](../guides/disk-optimization.md) for more strategies.
 
 ### Layer configuration broken
 
@@ -288,7 +236,7 @@ bash scripts/quick-setup.sh
 
 ## Next steps
 
-- **Complete build options** → [BUILD_GUIDE.md](BUILD_GUIDE.md)
-- **Layer and recipe conventions** → [LAYER_STRUCTURE.md](LAYER_STRUCTURE.md)
-- **Adding new recipes** → [RECIPES.md](RECIPES.md)
-- **CI/CD pipeline** → [CI_CD.md](CI_CD.md)
+- **Complete build options** → [../guides/build-guide.md](../guides/build-guide.md)
+- **All commands** → [../reference/quick-reference.md](../reference/quick-reference.md)
+- **Layer conventions** → [../reference/layer-structure.md](../reference/layer-structure.md)
+- **Troubleshooting** → [../guides/deployment-troubleshooting.md](../guides/deployment-troubleshooting.md)

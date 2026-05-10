@@ -1,0 +1,49 @@
+#!/bin/sh
+
+set -eu
+
+version_file="/usr/share/medtech/contracts/VITALS_CONTRACT_VERSION"
+schema_link="/usr/share/medtech/contracts/vitals/current.json"
+
+echo "Contract version file: ${version_file}"
+contract_version="<missing>"
+if [ -r "${version_file}" ]; then
+    # read may return non-zero on EOF without trailing newline; keep captured value.
+    IFS= read -r contract_version < "${version_file}" || true
+    if [ -z "${contract_version}" ]; then
+        contract_version="<missing>"
+    fi
+fi
+echo "Installed contract version: ${contract_version}"
+
+echo "Schema link path: ${schema_link}"
+if [ -L "${schema_link}" ]; then
+    link_target="$(readlink "${schema_link}")"
+else
+    link_target="<not-a-symlink>"
+fi
+echo "Schema symlink target: ${link_target}"
+
+if command -v readlink >/dev/null 2>&1; then
+    resolved_path="$(readlink -f "${schema_link}" 2>/dev/null || true)"
+else
+    resolved_path=""
+fi
+
+if [ -n "${resolved_path}" ]; then
+    echo "Resolved schema path: ${resolved_path}"
+else
+    echo "Resolved schema path: <unresolved>"
+fi
+
+if [ -n "${resolved_path}" ] && [ -f "${resolved_path}" ]; then
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash_output="$(sha256sum "${resolved_path}")"
+        hash_value="${hash_output%% *}"
+        echo "Schema sha256: ${hash_value}"
+    else
+        echo "Schema sha256: <sha256sum unavailable>"
+    fi
+    size_bytes="$(wc -c < "${resolved_path}" | tr -d ' ')"
+    echo "Schema size bytes: ${size_bytes}"
+fi
