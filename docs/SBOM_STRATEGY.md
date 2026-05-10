@@ -1,103 +1,75 @@
-# SBOM Strategy — MedTech Device OS
+# SBOM Strategy - MedTech Device OS
 
 ## Overview
 
-MedTech Device OS generates a **Software Bill of Materials (SBOM)** using
-Yocto's native `create-spdx` class.  Every package built by BitBake receives
-an SPDX 2.2 document automatically; the image-level document assembles them
-into a single authoritative manifest.
+MedTech Device OS supports SPDX SBOM generation using Yocto's native
+`create-spdx` class, but it is disabled by default to keep CI runs faster.
 
-## Standards Compliance
+You can enable it when needed (for release/compliance/manual runs) through a
+single toggle.
 
-| Standard | Status |
-|---|---|
-| SPDX 2.2 / ISO/IEC 40110 | ✅ |
-| NTIA Minimum Elements | ✅ |
-| OWASP Dependency-Check compatible | ✅ |
-| Anchore / Trivy compatible | ✅ |
+## Default behavior
 
-## How It Works
+- Default: SPDX generation is OFF.
+- Toggle variable in Yocto config: `MEDTECH_ENABLE_SPDX`.
+- Workflow input for manual runs: `spdx_enabled`.
 
-### 1. Build time
+When OFF, no `do_create_spdx` tasks are added.
+When ON, Yocto runs SPDX generation tasks and CI collects the outputs.
 
-`INHERIT += "create-spdx"` in `yocto/conf/local.conf` activates the class
-globally.  During `bitbake core-image-medtech`, Yocto:
+## Configuration
 
-1. Generates an SPDX document per recipe (package name, version, hash, license,
-   source references).
-2. Assembles a complete image-level SPDX document after `do_rootfs`.
-3. Writes everything to `tmp/deploy/images/qemuarm64/spdx/`.
-
-### 2. Collection
-
-`scripts/process-sbom.sh` copies the SPDX outputs into `sbom/` for CI
-artifact upload.  Run it after a successful build:
-
-```bash
-bash scripts/process-sbom.sh
-```
-
-### 3. Output formats
-
-| File pattern | Format | Purpose |
-|---|---|---|
-| `*.spdx.json` | JSON-LD | Human-readable review |
-| `*.spdx.rdf.gz` | RDF/XML (gzip) | Machine-readable tooling |
-| `*.tar.gz` | Archive | Complete per-package SPDX bundle |
-
-### 4. What each document contains
-
-- Component name, version, and package hash
-- License expression (SPDX identifier)
-- Source code references (`SPDX_INCLUDE_SOURCES = "1"`)
-- Supplier and author metadata
-- DESCRIBES / CONTAINS relationships between image and packages
-
-## Configuration (`yocto/conf/local.conf`)
+`yocto/conf/local.conf.sample` contains:
 
 ```bitbake
-INHERIT += "create-spdx"
-SPDX_PRETTY              = "1"    # Indented JSON
-SPDX_ARCHIVE_COMPRESS    = "gz"   # Compress per-package archives
-SPDX_INCLUDE_SOURCES     = "1"    # Include source refs
-SPDX_DEPLOY_DIR          = "${DEPLOY_DIR_IMAGE}/spdx"
+MEDTECH_ENABLE_SPDX ?= "0"
+INHERIT:append = "${@' create-spdx' if (d.getVar('MEDTECH_ENABLE_SPDX') or '').strip().lower() in ('1', 'true', 'yes', 'on') else ''}"
+
+SPDX_PRETTY = "1"
+SPDX_ARCHIVE_COMPRESS = "gz"
+SPDX_INCLUDE_SOURCES = "0"
+SPDX_DEPLOY_DIR = "${DEPLOY_DIR_IMAGE}/spdx"
 ```
 
-## CI/CD Integration
+## CI / Workflow usage
 
-Both GitHub Actions workflows (`device-build.yml`, `device-build-smart.yml`):
+### Smart build workflow
 
-1. Run `bitbake core-image-medtech` — SPDX generation is automatic.
-2. Run `bash scripts/process-sbom.sh` — collects SPDX into `sbom/`.
-3. Upload `sbom/` as a build artifact (retained 30 days).
+Workflow: `.github/workflows/device-build-smart.yml`
 
-## Tooling
+- Default for push/PR: `spdx_enabled=false`
+- Manual run: set `spdx_enabled=true` in `workflow_dispatch`
 
-```bash
-# Validate with spdx-tools
-pip install spdx-tools
-pyspdxtools validate sbom/core-image-medtech-qemuarm64.spdx.json
+### On-demand minimal workflow
 
-# Scan with Trivy
-trivy sbom sbom/core-image-medtech-qemuarm64.spdx.json
+Workflow: `.github/workflows/core-image-minimal-ondemand.yml`
 
-# Scan with OWASP Dependency-Check
-dependency-check --project "MedTech Device OS" \
-  --scan sbom/core-image-medtech-qemuarm64.spdx.json
-```
+- Manual run only
+- Set `spdx_enabled=true` when SPDX output is required
 
-## Architecture Decision
+## Output and artifact locations
 
-| Approach | Decision |
-|---|---|
-| Custom CycloneDX heredoc in `.bbclass` | ❌ Removed — BitBake parser rejects bash heredoc delimiters |
-| Custom `sbom.bbclass` per recipe | ❌ Removed — reinvents what Poky already provides |
-| **Yocto native `create-spdx`** | ✅ Adopted — maintained by Yocto project, ISO/IEC compliant |
+When enabled:
 
-## Future Work
+1. Yocto writes SPDX output to:
+  `yocto/build/tmp/deploy/images/qemuarm64/spdx/`
+2. `scripts/process-sbom.sh` copies files to:
+  `sbom/`
+3. Workflows copy collected files to:
+  `artifacts/spdx/`
+4. Workflows always write:
+  `artifacts/spdx-status.txt`
 
-- [ ] Automated CVE scan in CI using Trivy against SPDX output
-- [ ] License compliance gate (block build on GPL-3.0 in closed firmware)
-- [ ] SBOM signing / attestation (sigstore/cosign)
-- [ ] CycloneDX conversion via `cyclonedx-py` for tools that prefer that format
-- [ ] Cloud SBOM repository ingestion
+`spdx-status.txt` includes:
+
+- `spdx_enabled=true|false`
+- `spdx_files_collected=<count>`
+- timestamp and a summary note
+
+## Standards and tooling
+
+Generated SPDX output remains compatible with:
+
+- SPDX 2.2 / ISO/IEC 40110
+- NTIA minimum SBOM elements
+- Trivy, Anchore, OWASP Dependency-Check, SPDX tooling

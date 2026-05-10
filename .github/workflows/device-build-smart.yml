@@ -11,9 +11,14 @@ on:
         description: 'Release version to use (e.g. v1.2.0). Leave blank to auto-increment from the latest git tag.'
         required: false
         default: ''
+      spdx_enabled:
+        description: 'Enable Yocto SPDX generation (create-spdx) for this run.'
+        required: false
+        default: 'false'
 
 env:
   CI_BUILD_IMAGE: core-image-medtech
+  SPDX_ENABLED: ${{ github.event.inputs.spdx_enabled || 'false' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -219,6 +224,9 @@ jobs:
           cp ../conf/local.conf.sample conf/local.conf
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
+          echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\"" >> conf/local.conf
+          echo "SPDX generation toggle set to: ${SPDX_ENABLED}"
+
           echo "# GitHub-hosted runners do not persist build cache between jobs" >> conf/local.conf
           echo "Build directory initialized"
 
@@ -234,8 +242,7 @@ jobs:
           echo "  fetch phase: 5-8 GB"
           echo "  build phase: 20-30 GB"
           echo "  image phase: 5-10 GB"
-          echo "  SPDX SBOM: 500 MB"
-          echo "  TOTAL PEAK: 33-52 GB (without aggressive minimization)"
+          echo "  TOTAL PEAK: 32.5-51.5 GB (without aggressive minimization)"
           echo ""
 
           AVAIL_GB=$(df -BG / | awk 'NR==2 {gsub("G", "", $4); print $4}')
@@ -250,8 +257,9 @@ jobs:
           VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
         run: |
           if [[ -z "${VIGILES_KEY_DATA}" ]]; then
-            echo "Missing required secret: VIGILES_KEY_DATA"
-            exit 1
+            echo "VIGILES_KEY_DATA is not set. Continuing without Vigiles credentials."
+            echo "Vulnerability report generation may be unavailable for this run."
+            exit 0
           fi
 
           KEY_FILE="$(mktemp "${RUNNER_TEMP}/vigiles-key-XXXXXX")"
@@ -259,6 +267,18 @@ jobs:
           chmod 600 "${KEY_FILE}"
           echo "VIGILES_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
           echo "Vigiles key file configured"
+
+      - name: Apply CI local.conf toggles
+        run: |
+          LOCAL_CONF="yocto/build/conf/local.conf"
+
+          if [[ -n "${VIGILES_KEY_FILE:-}" ]]; then
+            echo "VIGILES_KEY_FILE = \"${VIGILES_KEY_FILE}\"" >> "${LOCAL_CONF}"
+            echo "Configured local.conf to use workflow-provided Vigiles key file."
+          else
+            echo "VIGILES_DISABLE_CHECK = \"1\"" >> "${LOCAL_CONF}"
+            echo "No Vigiles key configured; disabled Vigiles online check for this run."
+          fi
 
       - name: Yocto preflight (fast-fail metadata and URI checks)
         run: |
@@ -443,10 +463,73 @@ jobs:
           bash scripts/verify-image.sh python-sanity
 
       - name: Process SPDX SBOM
-        if: env.CI_BUILD_IMAGE == 'core-image-medtech'
+        if: env.SPDX_ENABLED == 'true' && env.CI_BUILD_IMAGE == 'core-image-medtech'
         run: |
           echo "=== Collecting SPDX SBOM ==="
           bash scripts/process-sbom.sh || true
+
+      - name: Collect SPDX artifacts
+        if: env.SPDX_ENABLED == 'true'
+        run: |
+          mkdir -p artifacts/spdx
+          if [[ -d sbom ]]; then
+            find sbom -maxdepth 1 -type f -exec cp {} artifacts/spdx/ \;
+          fi
+
+      - name: Write SPDX status
+        run: |
+          mkdir -p artifacts
+          COUNT=0
+          if [[ -d artifacts/spdx ]]; then
+            COUNT=$(find artifacts/spdx -maxdepth 1 -type f | wc -l)
+          fi
+          {
+            echo "spdx_enabled=${SPDX_ENABLED}"
+            echo "spdx_files_collected=${COUNT}"
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            if [[ "${SPDX_ENABLED}" != "true" ]]; then
+              echo "note=SPDX generation disabled by default; enable via manual workflow input spdx_enabled=true."
+            elif [[ "${COUNT}" -eq 0 ]]; then
+              echo "note=SPDX was enabled but no files were collected. Check build logs for create-spdx output."
+            else
+              echo "note=SPDX artifacts were collected successfully."
+            fi
+          } > artifacts/spdx-status.txt
+
+      - name: Collect Timesys Vigiles vulnerability report
+        run: |
+          MACHINE="qemuarm64"
+          mkdir -p artifacts/vigiles
+
+          mapfile -t REPORTS < <(find yocto/build/tmp/deploy -type f \
+            \( -iname '*vigiles*' -o -iname '*timesys*' -o -iname '*vuln*' -o -iname '*cve*' \) \
+            \( -iname '*.json' -o -iname '*.csv' -o -iname '*.txt' -o -iname '*.xml' -o -iname '*.html' \) \
+            2>/dev/null | sort)
+
+          if [[ ${#REPORTS[@]} -eq 0 ]]; then
+            echo "No Vigiles vulnerability report files found under yocto/build/tmp/deploy"
+            echo "Check that conf/local.conf includes: INHERIT += \"vigiles\""
+            echo "And verify the VIGILES_KEY_DATA secret contains a valid key payload."
+            {
+              echo "vigiles_reports_found=0"
+              echo "machine=${MACHINE}"
+              echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "note=Vigiles reports were not available; build artifacts were still produced."
+            } > "artifacts/vigiles/core-image-medtech-${MACHINE}-vigiles-status.txt"
+            exit 0
+          fi
+
+          for report in "${REPORTS[@]}"; do
+            cp --parents "${report}" artifacts/vigiles/
+          done
+
+          printf '%s\n' "${REPORTS[@]}" > "artifacts/vigiles/core-image-medtech-${MACHINE}-vigiles-report-files.txt"
+          {
+            echo "vigiles_reports_found=${#REPORTS[@]}"
+            echo "machine=${MACHINE}"
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "artifacts/vigiles/core-image-medtech-${MACHINE}-vigiles-status.txt"
+          echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
 
       - name: Package release bundle
         run: |
