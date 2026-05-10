@@ -12,9 +12,29 @@ on:
         required: false
         default: ''
       spdx_enabled:
-        description: 'Enable Yocto SPDX generation (create-spdx) for this run.'
+        description: 'Enable Yocto SPDX generation (create-spdx) for this run (default: disabled for faster CI).'
         required: false
         default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      vigiles_enabled:
+        description: 'Enable Timesys Vigiles vulnerability scanning (default: disabled for faster CI).'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      buildhistory_enabled:
+        description: 'Enable buildhistory for package size analysis (default: disabled for faster CI).'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
       ssh_access_mode:
         description: 'SSH access policy for this build: public-hardened (no baked admin key) or internal-keyed (bake key from secret).'
         required: false
@@ -31,6 +51,8 @@ concurrency:
 env:
   CI_BUILD_IMAGE: core-image-medtech
   SPDX_ENABLED: ${{ github.event.inputs.spdx_enabled || 'false' }}
+  VIGILES_ENABLED: ${{ github.event.inputs.vigiles_enabled || 'false' }}
+  BUILDHISTORY_ENABLED: ${{ github.event.inputs.buildhistory_enabled || 'false' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -241,7 +263,9 @@ jobs:
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
           echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\"" >> conf/local.conf
-          echo "SPDX generation toggle set to: ${SPDX_ENABLED}"
+          echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\"" >> conf/local.conf
+          echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\"" >> conf/local.conf
+          echo "Optional features: SPDX=${SPDX_ENABLED} Vigiles=${VIGILES_ENABLED} buildhistory=${BUILDHISTORY_ENABLED}"
 
           echo "# GitHub-hosted runners do not persist build cache between jobs" >> conf/local.conf
           echo "Build directory initialized"
@@ -272,9 +296,14 @@ jobs:
         env:
           VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
         run: |
+          if [[ "${VIGILES_ENABLED}" != "true" ]]; then
+            echo "Vigiles is disabled (VIGILES_ENABLED=${VIGILES_ENABLED}). Skipping key configuration."
+            exit 0
+          fi
+
           if [[ -z "${VIGILES_KEY_DATA}" ]]; then
-            echo "VIGILES_KEY_DATA is not set. Continuing without Vigiles credentials."
-            echo "Vulnerability report generation may be unavailable for this run."
+            echo "WARNING: Vigiles enabled but VIGILES_KEY_DATA is not set."
+            echo "Vulnerability report generation will be unavailable for this run."
             exit 0
           fi
 
@@ -282,7 +311,7 @@ jobs:
           printf '%s' "${VIGILES_KEY_DATA}" > "${KEY_FILE}"
           chmod 600 "${KEY_FILE}"
           echo "VIGILES_KEY_FILE=${KEY_FILE}" >> "${GITHUB_ENV}"
-          echo "Vigiles key file configured"
+          echo "Vigiles key file configured and enabled"
 
       - name: Configure SSH access mode
         id: ssh_access
@@ -340,12 +369,13 @@ jobs:
         run: |
           LOCAL_CONF="yocto/build/conf/local.conf"
 
-          if [[ -n "${VIGILES_KEY_FILE:-}" ]]; then
+          # Vigiles: enable only if explicitly requested AND key is available
+          if [[ "${VIGILES_ENABLED}" == "true" && -n "${VIGILES_KEY_FILE:-}" ]]; then
             echo "VIGILES_KEY_FILE = \"${VIGILES_KEY_FILE}\"" >> "${LOCAL_CONF}"
-            echo "Configured local.conf to use workflow-provided Vigiles key file."
+            echo "Vigiles enabled and key file configured."
           else
-            echo "VIGILES_DISABLE_CHECK = \"1\"" >> "${LOCAL_CONF}"
-            echo "No Vigiles key configured; disabled Vigiles online check for this run."
+            echo "# Vigiles disabled (VIGILES_ENABLED=${VIGILES_ENABLED}, key available: $([[ -n \"${VIGILES_KEY_FILE:-}\" ]] && echo yes || echo no))" >> "${LOCAL_CONF}"
+            echo "Vigiles vulnerability scanning disabled for this build."
           fi
 
           if [[ "${SSH_ACCESS_MODE:-public-hardened}" == "internal-keyed" ]]; then
@@ -578,6 +608,7 @@ jobs:
           } > artifacts/spdx-status.txt
 
       - name: Collect Timesys Vigiles vulnerability report
+        if: env.VIGILES_ENABLED == 'true'
         run: |
           MACHINE="qemuarm64"
           mkdir -p artifacts/vigiles
@@ -662,6 +693,7 @@ jobs:
           done
 
       - name: Prepare private Vigiles bundle
+        if: env.VIGILES_ENABLED == 'true'
         env:
           VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
         run: |
@@ -693,6 +725,7 @@ jobs:
           fi
 
       - name: Exclude private Vigiles files from public artifacts
+        if: env.VIGILES_ENABLED == 'true'
         run: |
           rm -rf artifacts/vigiles
 

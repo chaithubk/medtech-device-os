@@ -95,7 +95,9 @@ INHERIT += "rm_work"
 RM_WORK_EXCLUDE += "core-image-medtech"
 
 # Timesys Vigiles SBOM assessment (free tier)
-INHERIT += "vigiles"
+# Set MEDTECH_ENABLE_VIGILES to "1" to enable on-demand (default: disabled for faster CI)
+MEDTECH_ENABLE_VIGILES ?= "0"
+INHERIT:append = "${@' vigiles' if (d.getVar('MEDTECH_ENABLE_VIGILES') or '').strip().lower() in ('1', 'true', 'yes', 'on') else ''}"
 
 # Keep git fetches shallow where supported
 BB_GIT_SHALLOW = "1"
@@ -179,7 +181,9 @@ BAD_RECOMMENDATIONS:append = " bash-completion bluez5 btrfs-tools curl kbd mosqu
 # ============================================================
 # Buildhistory — feeds size ranking in audit-image-deps.sh
 # ============================================================
-INHERIT += "buildhistory"
+# Set MEDTECH_ENABLE_BUILDHISTORY to "1" for on-demand analysis (default: disabled for faster CI)
+MEDTECH_ENABLE_BUILDHISTORY ?= "0"
+INHERIT:append = "${@' buildhistory' if (d.getVar('MEDTECH_ENABLE_BUILDHISTORY') or '').strip().lower() in ('1', 'true', 'yes', 'on') else ''}"
 BUILDHISTORY_COMMIT = "0"
 
 # ============================================================

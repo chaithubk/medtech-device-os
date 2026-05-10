@@ -79,27 +79,88 @@ bitbake core-image-medtech
 `bitbake` is a wrapper (`scripts/bitbake`) that always ensures setup is ready.
 This is the single recommended build path.
 
-### `bitbake` *(wrapper — not a script you call directly)*
+### `bitbake` *(wrapper — transparent setup + optional analysis flags)*
 
-**A transparent wrapper around the real BitBake binary. This is what makes `bitbake` work everywhere in the container.**
+**A transparent wrapper around the real BitBake binary that handles environment setup and enables optional analysis flags.**
 
+**What it does:**
 - Detects if the build environment is initialized; runs `quick-setup.sh` if not
 - **Automatically drops from root to the `builder` user** (BitBake refuses root builds)
 - Sources `oe-init-build-env` before calling the real BitBake
 - Preserves all arguments and flags passed to it
+- Respects `MEDTECH_ENABLE_*` environment variables for optional analysis
 
+**Basic usage (from any directory in the container):**
 ```bash
-# Works from any directory in the container:
 bitbake core-image-medtech
 bitbake medtech-vitals-publisher
 bitbake -c cleansstate medtech-system && bitbake medtech-system
 bitbake -p   # parse only
 ```
 
-This wrapper lives at `scripts/bitbake` and is found first because
-`/workspace/scripts` is prepended to `PATH` in `.devcontainer/devcontainer.json`.
+**Enable optional analysis flags via environment variables:**
 
-See the file itself for the full documented implementation.
+```bash
+# ═══════════════════════════════════════════════════════════════════════════
+# OPTION A: Single flag (fastest for one-off analysis)
+# ═══════════════════════════════════════════════════════════════════════════
+export MEDTECH_ENABLE_BUILDHISTORY=1
+bitbake core-image-medtech
+# Output: yocto/build/dependency-audit/package-sizes.core-image-medtech.txt
+unset MEDTECH_ENABLE_BUILDHISTORY
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# OPTION B: Multiple flags (for comprehensive audit before GitHub PR)
+# ═══════════════════════════════════════════════════════════════════════════
+export MEDTECH_ENABLE_BUILDHISTORY=1
+export MEDTECH_ENABLE_SPDX=1
+export MEDTECH_ENABLE_VIGILES=1
+
+bitbake core-image-medtech
+
+# After build, review all artifacts:
+# - SPDX artifacts: yocto/build/tmp/deploy/images/qemuarm64/spdx/
+# - Vigiles report: yocto/build/vigiles/core-image-medtech-*-cve.json
+# - Package sizes: yocto/build/dependency-audit/package-sizes.core-image-medtech.txt
+
+# Disable when done
+unset MEDTECH_ENABLE_BUILDHISTORY MEDTECH_ENABLE_SPDX MEDTECH_ENABLE_VIGILES
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMMON PATTERNS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Quick shell session with flags
+bash << 'EOF'
+export MEDTECH_ENABLE_SPDX=1
+export MEDTECH_ENABLE_BUILDHISTORY=1
+bitbake core-image-medtech
+unset MEDTECH_ENABLE_SPDX MEDTECH_ENABLE_BUILDHISTORY
+EOF
+
+# Multiple builds with same flags
+export MEDTECH_ENABLE_BUILDHISTORY=1
+bitbake core-image-medtech
+bitbake medtech-vitals-publisher
+bitbake medtech-clinician-ui
+unset MEDTECH_ENABLE_BUILDHISTORY
+```
+
+**Available Flags:**
+
+| Flag | Purpose | Build Overhead | Output Location |
+|------|---------|-----------------|-----------------|
+| `MEDTECH_ENABLE_BUILDHISTORY=1` | Analyze package sizes for bloat detection | ~5% | `dependency-audit/package-sizes.*.txt` |
+| `MEDTECH_ENABLE_SPDX=1` | Generate SBOM (Software Bill of Materials) | ~10% | `tmp/deploy/images/*/spdx/` |
+| `MEDTECH_ENABLE_VIGILES=1` | Vulnerability scanning (requires API key) | ~15% | `vigiles/core-image-medtech-*-cve.json` |
+
+**Notes:**
+- Flags are **disabled by default** in `local.conf.sample` for faster CI builds
+- All flags can be set together or individually—they compose independently
+- For Vigiles, ensure `VIGILES_KEY_FILE` is set (auto-detected from `.secrets/vigiles-key.txt`)
+- `scripts/bitbake` wrapper lives at `scripts/bitbake` and is prepended to PATH in `.devcontainer/devcontainer.json`
 
 ---
 
