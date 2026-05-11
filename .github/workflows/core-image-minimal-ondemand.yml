@@ -11,6 +11,26 @@ on:
         description: "Enable Yocto SPDX generation (create-spdx)"
         required: false
         default: "false"
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      vigiles_enabled:
+        description: 'Enable Timesys Vigiles vulnerability scanning (default: disabled for faster CI).'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      buildhistory_enabled:
+        description: 'Enable buildhistory for package size analysis (default: disabled for faster CI).'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
       extra_local_conf:
         description: "Optional local.conf lines (one per line) for trimming experiments"
         required: false
@@ -19,6 +39,8 @@ on:
 env:
   CI_BUILD_IMAGE: core-image-minimal
   SPDX_ENABLED: ${{ github.event.inputs.spdx_enabled || 'false' }}
+  VIGILES_ENABLED: ${{ github.event.inputs.vigiles_enabled || 'false' }}
+  BUILDHISTORY_ENABLED: ${{ github.event.inputs.buildhistory_enabled || 'false' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -116,9 +138,14 @@ jobs:
         env:
           VIGILES_KEY_DATA: ${{ secrets.VIGILES_KEY_DATA }}
         run: |
+          if [[ "${VIGILES_ENABLED}" != "true" ]]; then
+            echo "Vigiles is disabled (VIGILES_ENABLED=${VIGILES_ENABLED}). Skipping key configuration."
+            exit 0
+          fi
+
           if [[ -z "${VIGILES_KEY_DATA}" ]]; then
-            echo "VIGILES_KEY_DATA is not set. Continuing without Vigiles credentials."
-            echo "Vulnerability report generation may be unavailable for this run."
+            echo "WARNING: Vigiles enabled but VIGILES_KEY_DATA is not set."
+            echo "Vulnerability report generation will be unavailable for this run."
             exit 0
           fi
 
@@ -136,7 +163,9 @@ jobs:
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
           echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\"" >> conf/local.conf
-          echo "SPDX generation toggle set to: ${SPDX_ENABLED}"
+          echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\"" >> conf/local.conf
+          echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\"" >> conf/local.conf
+          echo "Optional features: SPDX=${SPDX_ENABLED} Vigiles=${VIGILES_ENABLED} buildhistory=${BUILDHISTORY_ENABLED}"
 
           if [[ -n "${VIGILES_KEY_FILE:-}" ]]; then
             echo "VIGILES_KEY_FILE = \"${VIGILES_KEY_FILE}\"" >> conf/local.conf
@@ -212,6 +241,7 @@ jobs:
           } > artifacts/spdx-status.txt
 
       - name: Collect Timesys Vigiles vulnerability report
+        if: env.VIGILES_ENABLED == 'true'
         run: |
           MACHINE="${{ github.event.inputs.machine }}"
           mkdir -p artifacts/vigiles
@@ -279,6 +309,7 @@ jobs:
           ls -lh artifacts
 
       - name: Prepare private Vigiles bundle
+        if: env.VIGILES_ENABLED == 'true'
         env:
           VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
         run: |
@@ -320,6 +351,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Exclude private Vigiles files from public artifacts
+        if: env.VIGILES_ENABLED == 'true'
         run: |
           rm -rf artifacts/vigiles
 
