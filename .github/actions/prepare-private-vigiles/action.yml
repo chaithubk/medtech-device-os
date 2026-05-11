@@ -1,0 +1,62 @@
+name: Prepare Private Vigiles Bundle
+description: Create optional encrypted private Vigiles bundle and optionally remove public Vigiles artifacts.
+inputs:
+  machine:
+    description: Yocto machine name.
+    required: true
+  image_name:
+    description: Image recipe name used in bundle filename.
+    required: true
+  private_artifacts_dir:
+    description: Directory where private artifacts are stored.
+    required: false
+    default: private-artifacts
+  passphrase:
+    description: Optional passphrase for AES-256-CBC encryption.
+    required: false
+    default: ''
+  exclude_from_public:
+    description: Remove artifacts/vigiles from public artifacts when true.
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Create private Vigiles bundle
+      shell: bash
+      env:
+        VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ inputs.passphrase }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${{ inputs.private_artifacts_dir }}"
+
+        if [[ ! -d artifacts/vigiles ]]; then
+          echo "No artifacts/vigiles directory found; skipping private bundle creation."
+          exit 0
+        fi
+
+        if [[ -z "$(find artifacts/vigiles -type f 2>/dev/null)" ]]; then
+          echo "No Vigiles files available; skipping private bundle creation."
+          exit 0
+        fi
+
+        PRIVATE_TAR="${{ inputs.private_artifacts_dir }}/${{ inputs.image_name }}-${{ inputs.machine }}-vigiles-private.tar.gz"
+        tar -czf "${PRIVATE_TAR}" -C artifacts vigiles
+
+        if [[ -n "${VIGILES_PRIVATE_BUNDLE_PASSPHRASE:-}" ]]; then
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "${PRIVATE_TAR}" \
+            -out "${PRIVATE_TAR}.enc" \
+            -pass env:VIGILES_PRIVATE_BUNDLE_PASSPHRASE
+          rm -f "${PRIVATE_TAR}"
+          echo "Created encrypted private Vigiles bundle: ${PRIVATE_TAR}.enc"
+        else
+          echo "VIGILES_PRIVATE_BUNDLE_PASSPHRASE is not set; private Vigiles bundle remains unencrypted."
+        fi
+
+    - name: Exclude private Vigiles files from public artifacts
+      if: ${{ inputs.exclude_from_public == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf artifacts/vigiles

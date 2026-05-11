@@ -48,6 +48,8 @@ jobs:
     name: Build core-image-minimal
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -308,65 +310,71 @@ jobs:
 
           ls -lh artifacts
 
+      - name: Package and verify minimal release bundle
+        uses: ./.github/actions/package-verify-bundle
+        with:
+          image_name: ${{ env.CI_BUILD_IMAGE }}
+          machine: ${{ github.event.inputs.machine }}
+
       - name: Prepare private Vigiles bundle
         if: env.VIGILES_ENABLED == 'true'
-        env:
-          VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          mkdir -p private-artifacts
-          MACHINE="${{ github.event.inputs.machine }}"
-
-          if [[ ! -d artifacts/vigiles ]]; then
-            echo "No artifacts/vigiles directory found; skipping private bundle creation."
-            exit 0
-          fi
-
-          if [[ -z "$(find artifacts/vigiles -type f 2>/dev/null)" ]]; then
-            echo "No Vigiles files available; skipping private bundle creation."
-            exit 0
-          fi
-
-          PRIVATE_TAR="private-artifacts/core-image-minimal-${MACHINE}-vigiles-private.tar.gz"
-          tar -czf "${PRIVATE_TAR}" -C artifacts vigiles
-
-          if [[ -n "${VIGILES_PRIVATE_BUNDLE_PASSPHRASE:-}" ]]; then
-            openssl enc -aes-256-cbc -pbkdf2 -salt \
-              -in "${PRIVATE_TAR}" \
-              -out "${PRIVATE_TAR}.enc" \
-              -pass env:VIGILES_PRIVATE_BUNDLE_PASSPHRASE
-            rm -f "${PRIVATE_TAR}"
-            echo "Created encrypted private Vigiles bundle: ${PRIVATE_TAR}.enc"
-          else
-            echo "VIGILES_PRIVATE_BUNDLE_PASSPHRASE is not set; private Vigiles bundle remains unencrypted."
-          fi
+        uses: ./.github/actions/prepare-private-vigiles
+        with:
+          machine: ${{ github.event.inputs.machine }}
+          image_name: core-image-minimal
+          private_artifacts_dir: private-artifacts
+          passphrase: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
+          exclude_from_public: 'true'
 
       - name: Upload private Vigiles bundle
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-artifact-helper
         if: always()
         with:
           name: core-image-minimal-vigiles-private
           path: private-artifacts/
-          retention-days: 14
-          if-no-files-found: warn
-
-      - name: Exclude private Vigiles files from public artifacts
-        if: env.VIGILES_ENABLED == 'true'
-        run: |
-          rm -rf artifacts/vigiles
+          retention_days: '14'
+          if_no_files_found: warn
 
       - name: Upload minimal image analysis artifacts
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-artifact-helper
         if: always()
         with:
           name: core-image-minimal-analysis
           path: artifacts/
-          retention-days: 30
-          if-no-files-found: warn
+          retention_days: '30'
+          if_no_files_found: warn
+
+      - name: Prepare minimal prerelease metadata and notes
+        id: release_meta
+        uses: ./.github/actions/prepare-prerelease
+        if: success()
+        with:
+          image_name: core-image-minimal-${{ github.event.inputs.machine }}
+          push_prefix: dev-core-image-minimal-${{ github.event.inputs.machine }}
+          manual_prefix: dev-core-image-minimal-${{ github.event.inputs.machine }}
+          template_path: .github/release-notes/prerelease-common.md
+          output_notes_path: release-notes.md
+
+      - name: Publish minimal prerelease
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-bundle.tar.gz
+            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-manifest.json
+            artifacts/SHA256SUMS
+            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-summary.txt
+            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-packages.txt
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          body_path: release-notes.md
+          prerelease: true
+          draft: false
+          generate_release_notes: true
+          make_latest: false
 
       - name: Cleanup Vigiles key file
         if: always()
-        run: |
-          if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
-            rm -f "${VIGILES_KEY_FILE}"
-          fi
+        uses: ./.github/actions/cleanup-files
+        with:
+          paths: |
+            ${{ env.VIGILES_KEY_FILE }}
