@@ -88,18 +88,19 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
-          # Skip the image build when every changed file is in a non-build path:
-          #   .github/workflows/  — workflow definitions
-          #   docs/               — documentation directory
-          #   *.md at any level   — markdown files (README, TESTING, etc.)
+            # Skip the image build when every changed file is in a non-build path:
+            #   .github/workflows/  — workflow definitions
+            #   .github/actions/    — composite action metadata/scripts
+            #   docs/               — documentation directory
+            #   *.md at any level   — markdown files (README, TESTING, etc.)
           # NOTE: shell scripts are treated as build-affecting because they
           # participate directly in CI build/release flow.
           if [[ -z "$CHANGED" ]]; then
             # No diff context available (workflow_dispatch / initial push) -> full build.
             SKIP_BUILD=false
           else
-            BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
-              '^(\.github/workflows/|docs/|[^/]+\.md$|.+\.md$)' || true)
+              BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
+                '^(\.github/workflows/|\.github/actions/|docs/|[^/]+\.md$|.+\.md$)' || true)
             if [[ -n "$BUILD_AFFECTING" ]]; then
               SKIP_BUILD=false
             fi
