@@ -35,12 +35,21 @@ on:
         description: "Optional local.conf lines (one per line) for trimming experiments"
         required: false
         default: ""
+      publish_prerelease:
+        description: "Publish build outputs as a GitHub prerelease"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   CI_BUILD_IMAGE: core-image-minimal
   SPDX_ENABLED: ${{ github.event.inputs.spdx_enabled || 'false' }}
   VIGILES_ENABLED: ${{ github.event.inputs.vigiles_enabled || 'false' }}
   BUILDHISTORY_ENABLED: ${{ github.event.inputs.buildhistory_enabled || 'false' }}
+  PUBLISH_PRERELEASE: ${{ github.event.inputs.publish_prerelease || 'false' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -347,7 +356,7 @@ jobs:
       - name: Prepare minimal prerelease metadata and notes
         id: release_meta
         uses: ./.github/actions/prepare-prerelease
-        if: success()
+        if: success() && env.PUBLISH_PRERELEASE == 'true'
         with:
           image_name: core-image-minimal-${{ github.event.inputs.machine }}
           push_prefix: dev-core-image-minimal-${{ github.event.inputs.machine }}
@@ -356,7 +365,7 @@ jobs:
           output_notes_path: release-notes.md
 
       - name: Publish minimal prerelease
-        if: success()
+        if: success() && env.PUBLISH_PRERELEASE == 'true'
         uses: softprops/action-gh-release@v1
         with:
           files: |

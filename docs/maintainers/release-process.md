@@ -6,9 +6,10 @@ How MedTech Device OS releases are created, versioned, and distributed.
 
 ## Overview
 
-Releases are published automatically by the CI pipeline when code is merged to
-the `main` branch. Each release consists of a QEMU-bootable image bundle
-distributed via GitHub Releases — no Docker required.
+Build workflows publish prerelease/dev artifacts, and stable semantic-version
+releases are created by promoting an existing prerelease (no rebuild). The
+public release payload remains a durable, runnable image bundle via GitHub
+Releases.
 
 ---
 
@@ -44,28 +45,38 @@ payload/
 
 | Release type | Tag | When |
 |---|---|---|
-| Stable (production) | `vMAJOR.MINOR.PATCH` | Every push to `main` |
-| Development (pre-release) | `dev-<sha>` | Manual `workflow_dispatch` runs |
+| Development (pre-release) | `dev-*` | Push to `main` and eligible manual workflow runs |
+| Stable (production) | `vMAJOR.MINOR.PATCH` | Manual promotion from a prerelease |
 
-The patch component is **auto-incremented** from the most recent `vX.Y.Z` git
-tag on every successful `main` push, starting at `v0.1.0`. Each release gets a
-unique tag — **no artifacts are ever overwritten**. To bump major or minor
-versions, create a `vX.Y.0` tag manually in the repository before merging.
+Prerelease tags are unique and never overwritten. Stable semver tags are created
+through the promotion workflow using one of: `patch`, `minor`, `major`, or
+`custom` version selection.
 
 ---
 
 ## How to Trigger a Release
 
-### Automatic (recommended)
+### Automatic prerelease
 
-Merge a PR to `main`. The CI pipeline runs automatically and, if successful,
-creates or updates the `latest` release.
+Merge a PR to `main`. The CI pipeline runs automatically and publishes a
+prerelease/dev release with versioned artifacts.
 
-### Manual pre-release
+### Manual prerelease
 
 Go to the repository on GitHub → **Actions** → **Smart Device OS Build** →
-**Run workflow**. This creates a `dev-<sha>` pre-release for testing without
-affecting the `latest` tag.
+**Run workflow**. This creates a prerelease/dev release for testing without
+creating a stable semver release.
+
+### Manual stable release promotion (no rebuild)
+
+Go to **Actions** → **Promote Prerelease To Stable Release**
+(`.github/workflows/promote-prerelease-release.yml`) and provide:
+- `source_tag`: existing prerelease tag to promote.
+- `release_strategy`: `patch`, `minor`, `major`, or `custom`.
+- `version`: required when using `custom` (format `vMAJOR.MINOR.PATCH`).
+
+This workflow reuses previously built assets from the source prerelease and
+publishes a stable release without running Yocto again.
 
 ---
 
@@ -118,8 +129,7 @@ See [QUICK_START_USER.md](QUICK_START_USER.md) for full instructions.
 
 ## Future: Semantic Versioning
 
-A future milestone will introduce:
-- `v1.0.0`-style release tags
-- Changelog generation
-- Separate stable and development release channels
-- Changelog auto-generation from PR descriptions
+Implemented in current process:
+- Separate prerelease and stable channels
+- Manual stable promotion with semantic version strategy
+- Stable releases created from prerelease assets (no rebuild)

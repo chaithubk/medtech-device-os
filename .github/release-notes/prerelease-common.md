@@ -5,10 +5,9 @@
 - Branch: {{BRANCH}}
 - Image: {{IMAGE}}
 
-**Quick Start** (no Docker required):
-```bash
-bash scripts/download-and-run-qemu.sh --release {{VERSION}}
-```
+**Quick Start**:
+- Download release assets for tag `{{VERSION}}` from GitHub Releases.
+- Follow the machine/image-specific run instructions in the repository quick-start docs.
 
 **Verify Checksums**:
 ```bash
