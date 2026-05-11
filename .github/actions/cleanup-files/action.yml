@@ -1,0 +1,22 @@
+name: Cleanup Files
+description: Remove files if they exist.
+inputs:
+  paths:
+    description: Newline-separated list of file paths to remove.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Remove files
+      shell: bash
+      run: |
+        set -euo pipefail
+        while IFS= read -r file_path; do
+          [[ -z "$file_path" ]] && continue
+          if [[ -f "$file_path" ]]; then
+            rm -f "$file_path"
+            echo "Removed: $file_path"
+          fi
+        done <<'EOF'
+${{ inputs.paths }}
+EOF

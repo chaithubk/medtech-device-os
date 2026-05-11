@@ -7,10 +7,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Optional release version to use (e.g. v1.2.0). Leave blank to create a dev-<sha> prerelease for manual runs.'
-        required: false
-        default: ''
       spdx_enabled:
         description: 'Enable Yocto SPDX generation (create-spdx) for this run (default: disabled for faster CI).'
         required: false
@@ -92,18 +88,19 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
-          # Skip the image build when every changed file is in a non-build path:
-          #   .github/workflows/  — workflow definitions
-          #   docs/               — documentation directory
-          #   *.md at any level   — markdown files (README, TESTING, etc.)
+            # Skip the image build when every changed file is in a non-build path:
+            #   .github/workflows/  — workflow definitions
+            #   .github/actions/    — composite action metadata/scripts
+            #   docs/               — documentation directory
+            #   *.md at any level   — markdown files (README, TESTING, etc.)
           # NOTE: shell scripts are treated as build-affecting because they
           # participate directly in CI build/release flow.
           if [[ -z "$CHANGED" ]]; then
             # No diff context available (workflow_dispatch / initial push) -> full build.
             SKIP_BUILD=false
           else
-            BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
-              '^(\.github/workflows/|docs/|[^/]+\.md$|.+\.md$)' || true)
+              BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
+                '^(\.github/workflows/|\.github/actions/|docs/|[^/]+\.md$|.+\.md$)' || true)
             if [[ -n "$BUILD_AFFECTING" ]]; then
               SKIP_BUILD=false
             fi
@@ -649,84 +646,21 @@ jobs:
           } > "artifacts/vigiles/core-image-medtech-${MACHINE}-vigiles-status.txt"
           echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
 
-      - name: Package release bundle
-        timeout-minutes: 45
-        run: |
-          set -euo pipefail
-          export PACKAGE_GZIP_LEVEL=1
-          export PACKAGE_HEARTBEAT_SECONDS=30
-
-          for attempt in 1 2; do
-            echo "=== Package release bundle (attempt ${attempt}/2) ==="
-            if timeout 45m bash scripts/package-release-artifacts.sh --image-name "${CI_BUILD_IMAGE}"; then
-              echo "Package release bundle succeeded"
-              break
-            fi
-
-            if [[ "$attempt" -eq 2 ]]; then
-              echo "Package release bundle failed after retries"
-              exit 1
-            fi
-
-            echo "Package release bundle failed; cleaning artifacts directory before retry"
-            rm -rf artifacts/*
-          done
-
-      - name: Verify release bundle
-        timeout-minutes: 15
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            echo "=== Verify release bundle (attempt ${attempt}/2) ==="
-            if timeout 15m bash scripts/verify-release-package.sh --image-name "${CI_BUILD_IMAGE}"; then
-              echo "Verify release bundle succeeded"
-              break
-            fi
-
-            if [[ "$attempt" -eq 2 ]]; then
-              echo "Verify release bundle failed after retries"
-              exit 1
-            fi
-
-            echo "Verify release bundle failed; retrying"
-          done
+      - name: Package and verify release bundle
+        uses: ./.github/actions/package-verify-bundle
+        with:
+          image_name: ${{ env.CI_BUILD_IMAGE }}
+          machine: qemuarm64
 
       - name: Prepare private Vigiles bundle
         if: env.VIGILES_ENABLED == 'true'
-        env:
-          VIGILES_PRIVATE_BUNDLE_PASSPHRASE: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          mkdir -p private-artifacts
-
-          if [[ ! -d artifacts/vigiles ]]; then
-            echo "No artifacts/vigiles directory found; skipping private bundle creation."
-            exit 0
-          fi
-
-          if [[ -z "$(find artifacts/vigiles -type f 2>/dev/null)" ]]; then
-            echo "No Vigiles files available; skipping private bundle creation."
-            exit 0
-          fi
-
-          PRIVATE_TAR="private-artifacts/core-image-medtech-qemuarm64-vigiles-private.tar.gz"
-          tar -czf "${PRIVATE_TAR}" -C artifacts vigiles
-
-          if [[ -n "${VIGILES_PRIVATE_BUNDLE_PASSPHRASE:-}" ]]; then
-            openssl enc -aes-256-cbc -pbkdf2 -salt \
-              -in "${PRIVATE_TAR}" \
-              -out "${PRIVATE_TAR}.enc" \
-              -pass env:VIGILES_PRIVATE_BUNDLE_PASSPHRASE
-            rm -f "${PRIVATE_TAR}"
-            echo "Created encrypted private Vigiles bundle: ${PRIVATE_TAR}.enc"
-          else
-            echo "VIGILES_PRIVATE_BUNDLE_PASSPHRASE is not set; private Vigiles bundle remains unencrypted."
-          fi
-
-      - name: Exclude private Vigiles files from public artifacts
-        if: env.VIGILES_ENABLED == 'true'
-        run: |
-          rm -rf artifacts/vigiles
+        uses: ./.github/actions/prepare-private-vigiles
+        with:
+          machine: qemuarm64
+          image_name: core-image-medtech
+          private_artifacts_dir: private-artifacts
+          passphrase: ${{ secrets.VIGILES_PRIVATE_BUNDLE_PASSPHRASE }}
+          exclude_from_public: 'true'
 
       - name: Finalize upload directory
         run: |
@@ -750,64 +684,48 @@ jobs:
           rm -rf yocto
 
       - name: Upload private Vigiles bundle
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-artifact-helper
         if: success()
         with:
           name: qemu-image-medtech-vigiles-private
           path: private-artifacts/
-          retention-days: 14
-          if-no-files-found: warn
+          retention_days: '14'
+          if_no_files_found: warn
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/upload-artifact-helper
         if: success()
         with:
           name: qemu-image-medtech
           path: artifacts/
-          retention-days: 30
-          if-no-files-found: error
+          retention_days: '30'
+          if_no_files_found: error
 
 
       # === Create GitHub Release with QEMU artifacts ===
-      # push to main:      semver tag vMAJOR.MINOR.PATCH (patch auto-incremented from latest git tag)
-      # workflow_dispatch: tagged "dev-<sha>" as a prerelease, never overwrites production releases.
-      # Each release gets a unique tag — no artifact overwriting.
+      # push to main: always prerelease dev build
+      # workflow_dispatch: always prerelease dev build
+      # Each release gets a unique tag to avoid artifact overwrites.
+      # Stable semver releases are promoted separately via:
+      #   .github/workflows/promote-prerelease-release.yml
 
-      - name: Compute semver release tag
+      - name: Prepare prerelease metadata and notes
         id: release_meta
+        uses: ./.github/actions/prepare-prerelease
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-        run: |
-          MANUAL_VERSION="${{ github.event.inputs.version }}"
+        with:
+          image_name: core-image-medtech-qemuarm64
+          push_prefix: dev-main
+          manual_prefix: dev-manual
+          template_path: .github/release-notes/prerelease-common.md
+          output_notes_path: release-notes.md
+          extra_notes: |
+            **SSH Access Policy**
+            - `public-hardened`: no default admin SSH key is baked into the image.
+            - `internal-keyed`: login is `ssh -i <matching-private-key> -p 2222 medadmin@localhost`.
 
-          if [[ -n "$MANUAL_VERSION" ]]; then
-            # Explicit version provided via workflow_dispatch input.
-            NEXT_TAG="$MANUAL_VERSION"
-            echo "Using manually specified version: $NEXT_TAG"
-            echo "tag=$NEXT_TAG"    >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "make_latest=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # Auto-increment production semver on push to main.
-            git fetch --tags --quiet
-            LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
-            if [[ -z "$LATEST" ]]; then
-              NEXT_TAG="v0.1.0"
-            else
-              MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
-              MINOR=$(echo "$LATEST" | cut -d. -f2)
-              PATCH=$(echo "$LATEST" | cut -d. -f3)
-              NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
-            fi
-            echo "Previous tag: ${LATEST:-<none>}  →  Next tag: $NEXT_TAG"
-            echo "tag=$NEXT_TAG"        >> "$GITHUB_OUTPUT"
-            echo "prerelease=false"     >> "$GITHUB_OUTPUT"
-            echo "make_latest=true"     >> "$GITHUB_OUTPUT"
-          else
-            # Manual run without explicit version -> unique prerelease tag.
-            echo "tag=dev-${{ github.sha }}-r${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "make_latest=false" >> "$GITHUB_OUTPUT"
-          fi
+            **Runtime SSH Mode For This Build**
+            - ${{ steps.ssh_access.outputs.mode }}
 
       - name: Create GitHub Release with Artifacts
         if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
@@ -818,27 +736,7 @@ jobs:
             artifacts/core-image-medtech-qemuarm64-manifest.json
             artifacts/SHA256SUMS
           tag_name: ${{ steps.release_meta.outputs.tag }}
-          body: |
-            **Build Info**
-            - Version: ${{ steps.release_meta.outputs.tag }}
-            - Commit: ${{ github.sha }}
-            - Branch: ${{ github.ref_name }}
-            - Image: core-image-medtech-qemuarm64
-            - SSH access mode: ${{ steps.ssh_access.outputs.mode }}
-
-            **SSH Access Policy**
-            - `public-hardened`: no default admin SSH key is baked into the image.
-            - `internal-keyed`: login is `ssh -i <matching-private-key> -p 2222 medadmin@localhost`.
-
-            **Quick Start** (no Docker required):
-            ```bash
-            bash scripts/download-and-run-qemu.sh --release ${{ steps.release_meta.outputs.tag }}
-            ```
-
-            **Verify Checksums**:
-            ```bash
-            sha256sum -c SHA256SUMS
-            ```
+          body_path: release-notes.md
           prerelease: ${{ steps.release_meta.outputs.prerelease }}
           draft: false
           generate_release_notes: true
@@ -846,13 +744,11 @@ jobs:
 
       - name: Cleanup temporary key files
         if: always()
-        run: |
-          if [[ -n "${VIGILES_KEY_FILE:-}" && -f "${VIGILES_KEY_FILE}" ]]; then
-            rm -f "${VIGILES_KEY_FILE}"
-          fi
-          if [[ -n "${MEDTECH_ADMIN_KEY_FILE:-}" && -f "${MEDTECH_ADMIN_KEY_FILE}" ]]; then
-            rm -f "${MEDTECH_ADMIN_KEY_FILE}"
-          fi
+        uses: ./.github/actions/cleanup-files
+        with:
+          paths: |
+            ${{ env.VIGILES_KEY_FILE }}
+            ${{ env.MEDTECH_ADMIN_KEY_FILE }}
 
       - name: Final disk report
         if: always()

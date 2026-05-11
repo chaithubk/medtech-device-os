@@ -1,0 +1,72 @@
+name: Prepare Prerelease Metadata
+description: Compute prerelease tag and render shared prerelease release notes.
+inputs:
+  image_name:
+    description: Image label for release notes.
+    required: true
+  push_prefix:
+    description: Prefix used when event is push.
+    required: true
+  manual_prefix:
+    description: Prefix used for non-push events.
+    required: true
+  template_path:
+    description: Path to prerelease template markdown.
+    required: false
+    default: .github/release-notes/prerelease-common.md
+  output_notes_path:
+    description: Output path for rendered notes.
+    required: false
+    default: release-notes.md
+  extra_notes:
+    description: Optional markdown appended to rendered notes.
+    required: false
+    default: ''
+outputs:
+  tag:
+    description: Computed prerelease tag.
+    value: ${{ steps.meta.outputs.tag }}
+  prerelease:
+    description: Whether target release is prerelease.
+    value: ${{ steps.meta.outputs.prerelease }}
+  make_latest:
+    description: Whether release should be latest.
+    value: ${{ steps.meta.outputs.make_latest }}
+  channel:
+    description: Release channel name.
+    value: ${{ steps.meta.outputs.channel }}
+runs:
+  using: composite
+  steps:
+    - name: Compute prerelease tag
+      id: meta
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        SHORT_SHA="${GITHUB_SHA::7}"
+        if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          TAG="${{ inputs.push_prefix }}-${SHORT_SHA}-r${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+        else
+          TAG="${{ inputs.manual_prefix }}-${SHORT_SHA}-r${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+        fi
+
+        echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+        echo "prerelease=true" >> "$GITHUB_OUTPUT"
+        echo "make_latest=false" >> "$GITHUB_OUTPUT"
+        echo "channel=prerelease" >> "$GITHUB_OUTPUT"
+
+    - name: Render release notes
+      shell: bash
+      run: |
+        set -euo pipefail
+        sed \
+          -e "s|{{VERSION}}|${{ steps.meta.outputs.tag }}|g" \
+          -e "s|{{COMMIT}}|${GITHUB_SHA}|g" \
+          -e "s|{{BRANCH}}|${GITHUB_REF_NAME}|g" \
+          -e "s|{{IMAGE}}|${{ inputs.image_name }}|g" \
+          "${{ inputs.template_path }}" > "${{ inputs.output_notes_path }}"
+
+        if [[ -n "${{ inputs.extra_notes }}" ]]; then
+          printf '\n%s\n' "${{ inputs.extra_notes }}" >> "${{ inputs.output_notes_path }}"
+        fi

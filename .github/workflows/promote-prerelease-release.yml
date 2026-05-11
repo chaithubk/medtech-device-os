@@ -1,0 +1,187 @@
+name: Promote Prerelease To Stable Release
+
+# Promotion workflow purpose:
+# - Reuse assets from an existing prerelease tag
+# - Publish a stable semver release (patch/minor/major/custom)
+# - Never rebuild Yocto in this workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: "Existing prerelease tag to promote (example: dev-main-abc1234-r42.1)"
+        required: true
+        type: string
+      release_strategy:
+        description: "Stable version strategy"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      version:
+        description: "Required when release_strategy=custom. Format: vMAJOR.MINOR.PATCH"
+        required: false
+        default: ""
+        type: string
+      make_latest:
+        description: "Mark promoted stable release as latest"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote Existing Release Assets
+    runs-on: ubuntu-22.04
+    env:
+      SOURCE_TAG: ${{ github.event.inputs.source_tag }}
+      RELEASE_STRATEGY: ${{ github.event.inputs.release_strategy }}
+      CUSTOM_VERSION: ${{ github.event.inputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate source release is prerelease with assets
+        id: source
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = process.env.SOURCE_TAG;
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+
+            const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const data = release.data;
+
+            if (!data.prerelease) {
+              core.setFailed(`Source tag '${tag}' is not a prerelease. Promotion only allows prerelease sources.`);
+              return;
+            }
+
+            const assetCount = (data.assets || []).length;
+            if (assetCount === 0) {
+              core.setFailed(`Source prerelease '${tag}' has no assets to promote.`);
+              return;
+            }
+
+            core.setOutput('source_name', data.name || data.tag_name);
+            core.setOutput('asset_count', String(assetCount));
+
+      - name: Compute target stable tag
+        id: target
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --quiet
+
+          if [[ "$RELEASE_STRATEGY" == "custom" ]]; then
+            if [[ -z "$CUSTOM_VERSION" ]]; then
+              echo "release_strategy=custom requires version input (vMAJOR.MINOR.PATCH)."
+              exit 1
+            fi
+            if [[ ! "$CUSTOM_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid custom version '$CUSTOM_VERSION'. Expected vMAJOR.MINOR.PATCH."
+              exit 1
+            fi
+            TARGET_TAG="$CUSTOM_VERSION"
+          else
+            LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+            if [[ -z "$LATEST" ]]; then
+              BASE_MAJOR=0
+              BASE_MINOR=1
+              BASE_PATCH=0
+            else
+              BASE_MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+              BASE_MINOR=$(echo "$LATEST" | cut -d. -f2)
+              BASE_PATCH=$(echo "$LATEST" | cut -d. -f3)
+            fi
+
+            case "$RELEASE_STRATEGY" in
+              patch)
+                TARGET_TAG="v${BASE_MAJOR}.${BASE_MINOR}.$((BASE_PATCH + 1))"
+                ;;
+              minor)
+                TARGET_TAG="v${BASE_MAJOR}.$((BASE_MINOR + 1)).0"
+                ;;
+              major)
+                TARGET_TAG="v$((BASE_MAJOR + 1)).0.0"
+                ;;
+              *)
+                echo "Unsupported release_strategy: $RELEASE_STRATEGY"
+                exit 1
+                ;;
+            esac
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${TARGET_TAG}" >/dev/null; then
+            echo "Target tag already exists: ${TARGET_TAG}"
+            exit 1
+          fi
+
+          echo "target_tag=${TARGET_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download source release assets
+        uses: robinraju/release-downloader@v1.12
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ env.SOURCE_TAG }}
+          fileName: '*'
+          out-file-path: promote-assets
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show downloaded assets
+        run: |
+          set -euo pipefail
+          ls -lh promote-assets
+          COUNT=$(find promote-assets -maxdepth 1 -type f | wc -l)
+          if [[ "$COUNT" -eq 0 ]]; then
+            echo "No files were downloaded from source prerelease assets."
+            exit 1
+          fi
+
+      - name: Write promotion summary
+        run: |
+          {
+            echo "## Promotion Summary"
+            echo "- Source prerelease tag: ${SOURCE_TAG}"
+            echo "- Source release name: ${{ steps.source.outputs.source_name }}"
+            echo "- Source asset count: ${{ steps.source.outputs.asset_count }}"
+            echo "- Stable release strategy: ${RELEASE_STRATEGY}"
+            echo "- Target stable tag: ${{ steps.target.outputs.target_tag }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create stable release from promoted assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.target.outputs.target_tag }}
+          files: promote-assets/*
+          body: |
+            **Promoted Stable Release**
+            - Version: ${{ steps.target.outputs.target_tag }}
+            - Source prerelease: ${{ env.SOURCE_TAG }}
+            - Source release: ${{ steps.source.outputs.source_name }}
+            - Source asset count: ${{ steps.source.outputs.asset_count }}
+            - Promotion strategy: ${{ github.event.inputs.release_strategy }}
+            - Promoted by run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            This release reuses previously built assets and does not trigger a Yocto rebuild.
+          prerelease: false
+          draft: false
+          generate_release_notes: true
+          make_latest: ${{ github.event.inputs.make_latest }}

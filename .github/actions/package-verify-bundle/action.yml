@@ -1,0 +1,61 @@
+name: Package And Verify Bundle
+description: Package Yocto release artifacts and verify bundle integrity with retries.
+inputs:
+  image_name:
+    description: BitBake image recipe name.
+    required: true
+  machine:
+    description: Yocto machine name.
+    required: true
+  package_timeout_minutes:
+    description: Timeout in minutes for packaging command.
+    required: false
+    default: '45'
+  verify_timeout_minutes:
+    description: Timeout in minutes for verify command.
+    required: false
+    default: '15'
+runs:
+  using: composite
+  steps:
+    - name: Package release bundle
+      shell: bash
+      run: |
+        set -euo pipefail
+        export PACKAGE_GZIP_LEVEL=1
+        export PACKAGE_HEARTBEAT_SECONDS=30
+
+        for attempt in 1 2; do
+          echo "=== Package release bundle (attempt ${attempt}/2) ==="
+          if timeout "${{ inputs.package_timeout_minutes }}m" bash scripts/package-release-artifacts.sh --image-name "${{ inputs.image_name }}" --machine "${{ inputs.machine }}"; then
+            echo "Package release bundle succeeded"
+            break
+          fi
+
+          if [[ "$attempt" -eq 2 ]]; then
+            echo "Package release bundle failed after retries"
+            exit 1
+          fi
+
+          echo "Package release bundle failed; cleaning package outputs before retry"
+          rm -f artifacts/*.tar.gz artifacts/*-manifest.json artifacts/SHA256SUMS
+        done
+
+    - name: Verify release bundle
+      shell: bash
+      run: |
+        set -euo pipefail
+        for attempt in 1 2; do
+          echo "=== Verify release bundle (attempt ${attempt}/2) ==="
+          if timeout "${{ inputs.verify_timeout_minutes }}m" bash scripts/verify-release-package.sh --image-name "${{ inputs.image_name }}" --machine "${{ inputs.machine }}"; then
+            echo "Verify release bundle succeeded"
+            break
+          fi
+
+          if [[ "$attempt" -eq 2 ]]; then
+            echo "Verify release bundle failed after retries"
+            exit 1
+          fi
+
+          echo "Verify release bundle failed; retrying"
+        done

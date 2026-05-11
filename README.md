@@ -96,9 +96,10 @@ The pipeline (`.github/workflows/device-build-smart.yml`) automatically:
 1. Builds `core-image-medtech` on every push/PR to `main`
 2. Runs post-build policy checks (no debug packages, Python sanity)
 3. Packages the QEMU bundle (`package-release-artifacts.sh`)
-4. Creates a GitHub Release on `main` branch merges
+4. Publishes prerelease/dev artifacts on `main` branch merges
+5. Promotes to stable semver releases via `.github/workflows/promote-prerelease-release.yml` (manual, no rebuild)
 
-5. **Packages a private Vigiles bundle** (see below)
+6. **Packages a private Vigiles bundle** (see below)
 
 ```bash
 # Package release bundle (used by CI)
