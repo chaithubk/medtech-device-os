@@ -1,21 +1,75 @@
 # MedTech Device OS
 
-Embedded Linux operating system for medical IoT devices. Built with Yocto Project
-(kirkstone) for ARM64. Runs and develops entirely in QEMU — no physical hardware required.
+Embedded Linux distribution for a medical IoT reference device, built with Yocto
+Project (kirkstone) for ARM64.
+
+This README is a quick orientation page. Detailed implementation and operations
+guidance live under `docs/`.
 
 ---
 
-## What is MedTech Device OS?
+## What This Repository Provides
 
-A production-grade embedded Linux OS that demonstrates a complete medical IoT stack:
+- Yocto layer and image definition for `core-image-medtech`
+- Local development workflow via VS Code dev container + QEMU
+- CI/CD packaging for downloadable QEMU release bundles
+- Security and compliance workflow with SPDX and Vigiles integration
 
-- **MQTT Broker** (Mosquitto) — device communication fabric
-- **Vitals Publisher** — simulates patient vitals every 10 seconds
-- **Edge Analytics** — TensorFlow Lite sepsis risk detection (on-device ML)
-- **Clinician UI** — Qt6 dashboard (headless/offscreen in QEMU)
-- **Systemd** — full service management with proper dependency chains
-- **CycloneDX SBOM** — automated software bill of materials
-- **GitHub Releases** — ready-to-run QEMU images, no Docker required
+## Where To Find What
+
+- Architecture overview: [docs/reference/architecture-reference.md](docs/reference/architecture-reference.md)
+- Yocto layer structure: [docs/reference/layer-structure.md](docs/reference/layer-structure.md)
+- Build and dev workflow: [docs/guides/build-guide.md](docs/guides/build-guide.md)
+- CI/CD pipeline behavior: [docs/maintainers/ci-cd.md](docs/maintainers/ci-cd.md)
+- Release and promotion process: [docs/maintainers/release-process.md](docs/maintainers/release-process.md)
+- SBOM and compliance strategy: [docs/guides/sbom-strategy.md](docs/guides/sbom-strategy.md)
+- SSH setup and hardening: [docs/guides/ssh-provisioning.md](docs/guides/ssh-provisioning.md)
+- Deployment troubleshooting: [docs/guides/deployment-troubleshooting.md](docs/guides/deployment-troubleshooting.md)
+- Test procedures: [TESTING.md](TESTING.md)
+
+## Architecture Snapshot
+
+Core runtime components included in the image:
+
+- Mosquitto MQTT broker
+- Vitals publisher service
+- Edge analytics service (TFLite-based)
+- Clinician UI service (Qt6, headless/offscreen in QEMU)
+- systemd service orchestration
+
+High-level service/data flow:
+
+```text
+medtech-vitals-publisher -> mosquitto -> medtech-edge-analytics -> medtech-clinician-ui
+         medtech/vitals/latest                 medtech/predictions/sepsis
+```
+
+Systemd startup order (dependency chain):
+
+```text
+mosquitto.service
+  -> medtech-vitals-publisher.service
+    -> medtech-edge-analytics.service
+      -> medtech-clinician-ui.service
+```
+
+Deep dive: [docs/reference/architecture-reference.md](docs/reference/architecture-reference.md)
+
+## Layer Snapshot
+
+Top-level custom layer layout:
+
+```text
+yocto/meta-medtech/
+      conf/
+      classes/
+      recipes-core/
+      recipes-image/
+      recipes-services/
+      recipes-support/
+```
+
+Deep dive: [docs/reference/layer-structure.md](docs/reference/layer-structure.md)
 
 ---
 
@@ -47,10 +101,10 @@ ssh -p 2222 medadmin@localhost
 SSH password auth is disabled by default. Provision your public key via
 `MEDTECH_ADMIN_AUTHORIZED_KEY` in `yocto/build/conf/local.conf` before building.
 
-- 📖 **Full guide:** [docs/getting-started/quick-start-user.md](docs/getting-started/quick-start-user.md)
-- 📋 **Commands:** [docs/reference/quick-reference.md](docs/reference/quick-reference.md)
-- 🔐 **SSH key setup:** [docs/guides/ssh-provisioning.md](docs/guides/ssh-provisioning.md)
-- 🧭 **All docs:** [docs/](docs/)
+- Full guide: [docs/getting-started/quick-start-user.md](docs/getting-started/quick-start-user.md)
+- Commands: [docs/reference/quick-reference.md](docs/reference/quick-reference.md)
+- SSH key setup: [docs/guides/ssh-provisioning.md](docs/guides/ssh-provisioning.md)
+- Documentation home: [docs/readme.md](docs/readme.md)
 
 ---
 
@@ -81,121 +135,57 @@ bitbake core-image-medtech
 bash scripts/run-qemu.sh
 ```
 
-- 📖 **Full guide:** [docs/getting-started/quick-start-developer.md](docs/getting-started/quick-start-developer.md)
-- 🏗 **Build details:** [docs/guides/build-guide.md](docs/guides/build-guide.md)
-- 📦 **Layer structure:** [docs/reference/layer-structure.md](docs/reference/layer-structure.md)
-- 🧭 **All scripts:** [scripts/README.md](scripts/README.md)
+- Full guide: [docs/getting-started/quick-start-developer.md](docs/getting-started/quick-start-developer.md)
+- Build details: [docs/guides/build-guide.md](docs/guides/build-guide.md)
+- Layer structure: [docs/reference/layer-structure.md](docs/reference/layer-structure.md)
+- Scripts: [scripts/README.md](scripts/README.md)
 
 ---
 
 ## For Maintainers: CI/CD and Releases
 
-### GitHub Actions pipeline
+This project ships a release bundle for end users and a separate private
+security artifact flow for Vigiles data.
 
-The pipeline (`.github/workflows/device-build-smart.yml`) automatically:
-1. Builds `core-image-medtech` on every push/PR to `main`
-2. Runs post-build policy checks (no debug packages, Python sanity)
-3. Packages the QEMU bundle (`package-release-artifacts.sh`)
-4. Publishes prerelease/dev artifacts on `main` branch merges
-5. Promotes to stable semver releases via `.github/workflows/promote-prerelease-release.yml` (manual, no rebuild)
-
-6. **Packages a private Vigiles bundle** (see below)
-
-```bash
-# Package release bundle (used by CI)
-bash scripts/package-release-artifacts.sh --image-name core-image-medtech
-
-# Verify the bundle
-bash scripts/verify-release-package.sh --image-name core-image-medtech
-```
-
-- 📖 **CI details:** [docs/maintainers/ci-cd.md](docs/maintainers/ci-cd.md)
-- 🚀 **Release process:** [docs/maintainers/release-process.md](docs/maintainers/release-process.md)
-
-#### Private Vigiles Bundle
-
-The CI workflow creates a **separate, private artifact bundle** containing Vigiles vulnerability/configuration files:
-
-- `core-image-medtech-cve.json`
-- `linux-yocto-*.config`
-
-This bundle is uploaded as a separate artifact (`qemu-image-medtech-vigiles-private`), and is **not included in the public release**.
-
-**Encryption:**
-- If the repository secret `VIGILES_PRIVATE_BUNDLE_PASSPHRASE` is set, the private bundle is encrypted with AES-256 using OpenSSL.
-- Only someone with the passphrase can decrypt and access the contents.
-
-**How to set the passphrase:**
-1. Go to your repository's Settings → Secrets and variables → Actions.
-2. Add a new secret named `VIGILES_PRIVATE_BUNDLE_PASSPHRASE` with a strong, private value (e.g., a long random string).
-
-**How to decrypt:**
-Download the `.tar.gz.enc` file from the workflow artifacts and run:
-
-```bash
-openssl enc -d -aes-256-cbc -pbkdf2 -in core-image-medtech-qemuarm64-vigiles-private.tar.gz.enc -out core-image-medtech-qemuarm64-vigiles-private.tar.gz
-# Then extract:
-tar -xzf core-image-medtech-qemuarm64-vigiles-private.tar.gz
-```
-
-**Keep your passphrase secure!** Only those with the secret can access the private Vigiles bundle.
+- CI details: [docs/maintainers/ci-cd.md](docs/maintainers/ci-cd.md)
+- Release process: [docs/maintainers/release-process.md](docs/maintainers/release-process.md)
+- SBOM and compliance: [docs/guides/sbom-strategy.md](docs/guides/sbom-strategy.md)
 
 ---
 
-## Architecture
+## Current Status and Gaps
 
-```
-MQTT Data Flow
-──────────────
-Vitals Publisher ──→ mosquitto (1883) ──→ Edge Analytics ──→ Clinician UI
-   (Python)              (MQTT)              (TFLite)          (Qt6)
+### Current
 
-Topic: medtech/vitals/latest          medtech/predictions/sepsis
+- Core build and QEMU boot flow are active for `core-image-medtech`
+- SPDX generation is supported through Yocto `create-spdx` when enabled
+- Vigiles integration is available for vulnerability/compliance workflows
 
-Systemd Dependency Chain
-────────────────────────
-mosquitto.service
-  └── medtech-vitals-publisher.service
-        └── medtech-edge-analytics.service
-              └── medtech-clinician-ui.service
-```
+### Planned
 
-- 📖 **Full architecture:** [docs/reference/architecture-reference.md](docs/reference/architecture-reference.md)
+- Provide a clearer, release-grade compliance packaging profile for security
+      artifacts (SPDX + Vigiles outputs)
 
----
+### Investigating
 
-## Layer Structure
-
-```
-yocto/meta-medtech/
-├── conf/layer.conf                      # Layer registration
-├── classes/medtech-image.bbclass        # Image policy
-├── recipes-core/medtech-system/         # Base OS config
-├── recipes-services/                    # Application services
-│   ├── medtech-vitals-publisher/
-│   ├── medtech-edge-analytics/
-│   └── medtech-clinician-ui/
-├── recipes-support/                     # Third-party packages
-│   ├── mosquitto/
-│   ├── python3-paho-mqtt/
-│   └── tensorflow-lite/
-└── recipes-image/core-image-medtech/    # Image definition
-```
-
-- 📖 **Layer guide:** [yocto/meta-medtech/README.md](yocto/meta-medtech/README.md)
+- Whether to publish an additional CycloneDX export derived from SPDX outputs
+      for downstream tools that require CycloneDX specifically
+- Whether to enforce SPDX generation for selected release lanes by default
 
 ---
 
-## Sanity Checks (inside QEMU)
+## Quick Runtime Checks
+
+After booting QEMU and connecting over SSH:
 
 ```bash
-# Verify all services are running
+# Verify key services
 systemctl status mosquitto medtech-vitals-publisher medtech-edge-analytics medtech-clinician-ui
 
-# Watch MQTT data flow
+# Observe MQTT traffic
 mosquitto_sub -t "medtech/#" -v
 
-# Check image version
+# Confirm image build metadata
 cat /etc/medtech-release
 ```
 
@@ -215,12 +205,10 @@ cat /etc/medtech-release
 
 ## Documentation
 
-For complete guides, see **[docs/](docs/)** or the quick links above.
+Start with [docs/readme.md](docs/readme.md) for role-based navigation and
+[docs/index.md](docs/index.md) for the complete file index.
 
-| Audience | Document |
-|---|---|
-| Users | [Quick start](docs/getting-started/quick-start-user.md) \| [Reference](docs/reference/quick-reference.md) |
-| Developers | [Quick start](docs/getting-started/quick-start-developer.md) \| [Build guide](docs/guides/build-guide.md) \| [Recipes](docs/guides/recipes.md) |
-| Maintainers | [CI/CD](docs/maintainers/ci-cd.md) \| [Release](docs/maintainers/release-process.md) |
-| Reference | [Architecture](docs/reference/architecture-reference.md) \| [Layers](docs/reference/layer-structure.md) |
-| Testing | [Checklist](TESTING.md) |
+- Users: [docs/getting-started/quick-start-user.md](docs/getting-started/quick-start-user.md)
+- Developers: [docs/getting-started/quick-start-developer.md](docs/getting-started/quick-start-developer.md)
+- Maintainers: [docs/maintainers/ci-cd.md](docs/maintainers/ci-cd.md)
+- Testing checklist: [TESTING.md](TESTING.md)
