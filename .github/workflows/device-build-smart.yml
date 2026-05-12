@@ -39,14 +39,6 @@ on:
         options:
           - public-hardened
           - internal-keyed
-      publish_prerelease:
-        description: 'Create a GitHub prerelease for this manual run. Set to false to build and validate without publishing a release.'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 concurrency:
   group: smart-device-os-${{ github.ref }}
@@ -765,41 +757,33 @@ jobs:
           path: artifacts/
           retention_days: '30'
           if_no_files_found: error
+      # === CI Tagging (no GitHub Release creation in this workflow) ===
+      # Policy:
+      # - PR builds create dev-pr-* tags
+      # - push to main creates dev-main-* tags
+      # - workflow_dispatch creates dev-manual-* tags
+      # Stable/public releases are created intentionally via promotion workflow.
 
-
-      # === Create GitHub Release with QEMU artifacts ===
-      # push to main: always prerelease dev build
-      # workflow_dispatch: always prerelease dev build
-      # Each release gets a unique tag to avoid artifact overwrites.
-      # Stable semver releases are promoted separately via:
-      #   .github/workflows/promote-prerelease-release.yml
-
-      - name: Prepare prerelease metadata and notes
-        id: release_meta
-        uses: ./.github/actions/prepare-prerelease
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_prerelease != 'false')
+      - name: Compute CI tag
+        id: ci_tag
+        uses: ./.github/actions/compute-ci-tag
+        if: success()
         with:
-          image_name: core-image-medtech-qemuarm64
           push_prefix: dev-main
-          manual_prefix: dev-manual
-          ssh_mode: ${{ steps.ssh_access.outputs.mode }}
-          template_path: .github/release-notes/prerelease-common.md
-          output_notes_path: release-notes.md
+          non_push_prefix: ${{ github.event_name == 'pull_request' && format('dev-pr-{0}', github.event.pull_request.number) || 'dev-manual' }}
 
-      - name: Create GitHub Release with Artifacts
-        if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_prerelease != 'false'))
-        uses: softprops/action-gh-release@v1
+      - name: Create and push CI tag
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: ./.github/actions/create-git-tag
         with:
-          files: |
-            artifacts/core-image-medtech-qemuarm64-bundle.tar.gz
-            artifacts/core-image-medtech-qemuarm64-manifest.json
-            artifacts/SHA256SUMS
-          tag_name: ${{ steps.release_meta.outputs.tag }}
-          body_path: release-notes.md
-          prerelease: ${{ steps.release_meta.outputs.prerelease }}
-          draft: false
-          generate_release_notes: true
-          make_latest: ${{ steps.release_meta.outputs.make_latest }}
+          tag_name: ${{ steps.ci_tag.outputs.tag }}
+          target_sha: ${{ github.sha }}
+
+      - name: Note skipped tag push for fork PRs
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "Fork pull_request detected. GITHUB_TOKEN does not have permission to push tags to base repository."
+          echo "Computed tag (not pushed): ${{ steps.ci_tag.outputs.tag }}"
 
       - name: Cleanup temporary key files
         if: always()
@@ -815,19 +799,3 @@ jobs:
           echo "=== FINAL DISK STATUS ==="
           df -h / | tail -1
 
-  # ── Purge old prerelease tags (push to main only) ──────────────────────────
-  # Keeps the last 10 dev-main-* prereleases to prevent release list bloat.
-  # Runs only after a successful build+publish on main.
-  purge-old-prereleases:
-    name: Purge Old dev-main Prereleases
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - name: Delete oldest dev-main-* prereleases beyond the retention limit
-        uses: ./.github/actions/purge-prereleases
-        with:
-          prefix: dev-main-
-          keep: '10'
