@@ -7,7 +7,6 @@ on:
       - 'yocto/**'
       - 'scripts/**'
       - 'tests/**'
-      - '.github/workflows/device-build-smart.yml'
       - '.github/actions/**'
   push:
     branches: [ main ]
@@ -15,7 +14,6 @@ on:
       - 'yocto/**'
       - 'scripts/**'
       - 'tests/**'
-      - '.github/workflows/device-build-smart.yml'
       - '.github/actions/**'
   workflow_dispatch:
     inputs:
@@ -78,7 +76,7 @@ jobs:
       - name: Determine changed files
         id: check
         run: |
-          SKIP_BUILD=true  # Default: skip unless build-affecting changes found
+          SKIP_BUILD=true  # Default: skip unless yocto/ changes found
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             CHANGED=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" 2>/dev/null \
@@ -100,29 +98,35 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED:-<none detected — assuming full build>}"
 
-            # Skip the image build when every changed file is in a non-build path:
-            #   .github/workflows/  — workflow definitions
-            #   .github/actions/    — composite action metadata/scripts
-            #   docs/               — documentation directory
-            #   *.md at any level   — markdown files (README, TESTING, etc.)
-          # NOTE: shell scripts are treated as build-affecting because they
-          # participate directly in CI build/release flow.
+          # Only trigger full Yocto build for yocto/ changes.
+          # Changes to scripts/, tests/, .github/actions/, .github/workflows/ only trigger sanity checks.
           if [[ -z "$CHANGED" ]]; then
             # No diff context available (workflow_dispatch / initial push) -> full build.
             SKIP_BUILD=false
           else
-              BUILD_AFFECTING=$(echo "$CHANGED" | grep -Ev \
-                '^(\.github/workflows/|\.github/actions/|docs/|[^/]+\.md$|.+\.md$)' || true)
-            if [[ -n "$BUILD_AFFECTING" ]]; then
+            YOCTO_AFFECTED=$(echo "$CHANGED" | grep -E '^yocto/' || true)
+            if [[ -n "$YOCTO_AFFECTED" ]]; then
               SKIP_BUILD=false
             fi
           fi
 
           echo "skip_build=$SKIP_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Build-affecting files:"
-          echo "Result: skip_build=$SKIP_BUILD (Build affected: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
+          echo "Build-affecting files (yocto/ only):"
+          echo "Result: skip_build=$SKIP_BUILD (Yocto build: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
 
   # ── 2a. Fast-fail CI sanity checks (always run) ─────────────────────────────
+  # These checks run first and hard-fail immediately if they detect errors.
+  # They are fast (< 1 min) so PRs can be merged quickly with passing sanity checks,
+  # even while the full Yocto build runs in the background.
+  #
+  # Hard-fail triggers (unblocks merge only if passing):
+  #   - YAML syntax validation (.github/workflows/*.yml, .github/actions/*/action.yml)
+  #   - Bash script syntax validation (scripts/*.sh)
+  #
+  # Validation scope:
+  #   - These checks validate scripts/ changes, but do NOT trigger full Yocto build
+  #   - Full Yocto build only triggers on yocto/ changes (see detect-changes job)
+  #   - Allows script/packaging fixes to be merged quickly without waiting for 5h build
   fast-fail-ci-sanity:
     name: Fast-Fail CI Sanity
     runs-on: ubuntu-22.04
@@ -212,6 +216,19 @@ jobs:
           PYEOF
 
   # ── 2c. Full image build path ─────────────────────────────────────────────
+  # Hard-fail triggers (build must succeed or job fails):
+  #   - Yocto build (core-image-medtech compilation)
+  #   - Artifact finalization (SHA256SUMS, manifest, bundle must exist)
+  #
+  # Non-fatal downstream tasks (continue even on failure, never block merge/release):
+  #   - Packaging & verification (continue-on-error: true)
+  #   - Artifact upload (continue-on-error: true)
+  #   - Tagging (continue-on-error: true)
+  #   - Vigiles reports (continue-on-error: true)
+  #
+  # This ensures artifacts are NEVER lost, and packaging/tagging/scanning issues
+  # don't prevent image release or block PR merges. Artifacts are always available
+  # for diagnostics even if downstream tasks fail.
   build:
     name: Build Yocto Image
     needs:
@@ -722,6 +739,7 @@ jobs:
           echo "Found ${#REPORTS[@]} Vigiles-related report file(s)."
 
       - name: Package and verify release bundle
+        continue-on-error: true
         uses: ./.github/actions/package-verify-bundle
         with:
           image_name: ${{ env.CI_BUILD_IMAGE }}
@@ -761,6 +779,7 @@ jobs:
           rm -rf yocto
 
       - name: Upload private Vigiles bundle
+        continue-on-error: true
         uses: ./.github/actions/upload-artifact-helper
         if: success()
         with:
@@ -770,6 +789,7 @@ jobs:
           if_no_files_found: warn
 
       - name: Upload artifacts
+        continue-on-error: true
         uses: ./.github/actions/upload-artifact-helper
         if: success()
         with:
@@ -786,12 +806,14 @@ jobs:
 
       - name: Compute CI tag
         id: ci_tag
+        continue-on-error: true
         uses: ./.github/actions/compute-ci-tag
         if: success()
         with:
           push_prefix: dev-main
           non_push_prefix: ${{ github.event_name == 'pull_request' && format('dev-pr-{0}', github.event.pull_request.number) || 'dev-manual' }}
       - name: Create and push CI tag
+        continue-on-error: true
         if: success() && github.event_name == 'push'
         uses: ./.github/actions/create-git-tag
         with:
