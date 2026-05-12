@@ -3,8 +3,16 @@ name: Smart Device OS Build
 on:
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/workflows/test-tag-push.yml'
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/workflows/test-tag-push.yml'
   workflow_dispatch:
     inputs:
       spdx_enabled:
