@@ -249,7 +249,7 @@ Traceability chain:
 ```
 GitHub Release tag
   └── release notes (SHORT_SHA, COMMIT)
-       └── manifest.json (full commit SHA, layer SHAs, package list)
+     └── manifest.json (full commit SHA, ssh mode, contract repo/tag/SRCREV/schema hash, per-file checksums)
             └── git log / git show (recipe changes, layer versions)
 ```
 

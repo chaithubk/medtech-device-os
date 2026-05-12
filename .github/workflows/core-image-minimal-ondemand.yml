@@ -31,6 +31,14 @@ on:
         options:
           - 'false'
           - 'true'
+      ssh_access_mode:
+        description: 'SSH access policy to record in manifest metadata.'
+        required: false
+        default: 'public-hardened'
+        type: choice
+        options:
+          - public-hardened
+          - internal-keyed
       extra_local_conf:
         description: "Optional local.conf lines (one per line) for trimming experiments"
         required: false
@@ -315,6 +323,8 @@ jobs:
         with:
           image_name: ${{ env.CI_BUILD_IMAGE }}
           machine: ${{ github.event.inputs.machine }}
+          commit: ${{ github.sha }}
+          ssh_mode: ${{ github.event.inputs.ssh_access_mode || 'public-hardened' }}
 
       - name: Prepare private Vigiles bundle
         if: env.VIGILES_ENABLED == 'true'
@@ -358,6 +368,7 @@ jobs:
         with:
           tag_name: ${{ steps.ci_tag.outputs.tag }}
           target_sha: ${{ github.sha }}
+          push_token: ${{ secrets.CI_TAG_PUSH_TOKEN }}
 
       - name: Cleanup temporary key files
         if: always()

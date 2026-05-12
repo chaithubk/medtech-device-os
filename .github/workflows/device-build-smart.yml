@@ -463,7 +463,13 @@ jobs:
             medtech-vitals-publisher \
             medtech-clinician-ui \
             -c checkuri 2>&1 | tee -a build.log
-
+          echo "=== PREFLIGHT: fetch contract-dependent sources ===" | tee -a build.log
+          bitbake -k \
+            medtech-system \
+            medtech-vitals-publisher \
+            medtech-edge-analytics \
+            medtech-clinician-ui \
+            -c fetch 2>&1 | tee -a build.log
       - name: Build CI image
         run: |
           cd yocto/build
@@ -708,6 +714,8 @@ jobs:
         with:
           image_name: ${{ env.CI_BUILD_IMAGE }}
           machine: qemuarm64
+          commit: ${{ github.sha }}
+          ssh_mode: ${{ github.event.inputs.ssh_access_mode || 'public-hardened' }}
 
       - name: Prepare private Vigiles bundle
         if: env.VIGILES_ENABLED == 'true'
@@ -771,13 +779,13 @@ jobs:
         with:
           push_prefix: dev-main
           non_push_prefix: ${{ github.event_name == 'pull_request' && format('dev-pr-{0}', github.event.pull_request.number) || 'dev-manual' }}
-
       - name: Create and push CI tag
-        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: success() && github.event_name == 'push'
         uses: ./.github/actions/create-git-tag
         with:
           tag_name: ${{ steps.ci_tag.outputs.tag }}
           target_sha: ${{ github.sha }}
+          push_token: ${{ secrets.CI_TAG_PUSH_TOKEN }}
 
       - name: Note skipped tag push for fork PRs
         if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository

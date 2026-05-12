@@ -22,7 +22,7 @@ bash scripts/setup-host-qemu-prereqs.sh
 **Download and boot:**
 
 ```bash
-bash scripts/download-and-run-qemu.sh --tag {{VERSION}}
+bash scripts/download-and-run-qemu.sh --release {{VERSION}}
 ```
 
 The script downloads, verifies checksums, and boots QEMU. When ready it prints:
