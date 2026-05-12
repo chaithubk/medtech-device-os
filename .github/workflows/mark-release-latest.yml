@@ -1,0 +1,132 @@
+name: Mark Release as Stable and Latest
+
+# ---------------------------------------------------------------------------
+# RELEASE PROCESS — how to use this workflow
+# ---------------------------------------------------------------------------
+# PURPOSE
+#   Second and final step of the release promotion process.
+#   Run this AFTER the promoted release has been booted, validated on
+#   hardware / QEMU, and signed off by the team.
+#
+#   It updates an existing GitHub release to:
+#     - prerelease: false  (marks it as a stable release)
+#     - make_latest: true  (points the "Latest" badge to this release)
+#
+# WHEN TO RUN
+#   Only after ALL of the following are confirmed:
+#     - Image boots in QEMU without kernel panic.
+#     - First-boot SSH provisioning tested end-to-end.
+#     - All post-build policy checks passed.
+#     - SBOM / Vigiles scan reviewed (if applicable).
+#     - Team has agreed the release is production-ready.
+#
+# HOW TO USE
+#   - tag : leave empty to auto-select the newest stable release, or
+#           enter an exact tag (e.g. v1.2.3) to target a specific one.
+#
+# PRECEDING STEP
+#   Use .github/workflows/promote-prerelease-release.yml first to create
+#   the versioned release from a validated prerelease.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Stable release tag to mark as latest (e.g. v1.2.3). Leave empty to auto-select the newest stable release."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mark-release-latest-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mark-latest:
+    name: Mark Release as Stable and Latest
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Resolve target release tag
+        id: resolve
+        uses: actions/github-script@v7
+        env:
+          TAG_INPUT: ${{ github.event.inputs.tag }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+            const tagInput = (process.env.TAG_INPUT || '').trim();
+
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+
+            // Stable (non-prerelease) releases, newest first
+            const stable = releases
+              .filter(r => !r.prerelease && !r.draft)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const preview = stable.slice(0, 5).map((r, i) =>
+              `${i + 1}. \`${r.tag_name}\` — ${r.name || r.tag_name} (${r.created_at.slice(0, 10)})`
+            ).join('\n');
+
+            let selected;
+
+            if (tagInput) {
+              selected = releases.find(r => r.tag_name === tagInput);
+              if (!selected) {
+                core.setFailed(`Tag '${tagInput}' was not found in releases.`);
+                return;
+              }
+            } else {
+              // No tag specified — auto-select the newest stable release
+              if (stable.length === 0) {
+                core.setFailed('No stable (non-prerelease) releases found.');
+                return;
+              }
+              selected = stable[0];
+            }
+
+            core.setOutput('release_id', String(selected.id));
+            core.setOutput('tag_name', selected.tag_name);
+
+            core.summary
+              .addHeading('Last 5 Stable Releases')
+              .addRaw(preview || '- none', true)
+              .addHeading('Selected Release')
+              .addRaw(`\`${selected.tag_name}\` — ID ${selected.id}`, true)
+              .write();
+
+      - name: Mark release as stable and latest
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ steps.resolve.outputs.release_id }}
+          TAG_NAME: ${{ steps.resolve.outputs.tag_name }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+            const releaseId = parseInt(process.env.RELEASE_ID, 10);
+            const tagName = process.env.TAG_NAME;
+
+            await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: releaseId,
+              prerelease: false,
+              make_latest: 'true',
+            });
+
+            core.summary
+              .addHeading('Release Marked as Stable and Latest')
+              .addRaw(`- Tag: \`${tagName}\`\n- prerelease: false\n- make_latest: true`, true)
+              .write();
+
+            core.info(`Release ${tagName} (ID ${releaseId}) is now marked as stable and latest.`);

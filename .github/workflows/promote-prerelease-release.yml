@@ -1,23 +1,41 @@
 name: Promote Prerelease To Stable Release
 
-# Promotion workflow purpose:
-# - Reuse assets from an existing prerelease tag
-# - Publish a stable semver release (patch/minor/major/custom)
-# - Never rebuild Yocto in this workflow
+# ---------------------------------------------------------------------------
+# RELEASE PROCESS — how to use this workflow
+# ---------------------------------------------------------------------------
+# PURPOSE
+#   Promotes an existing prerelease (rc/nightly) to a versioned stable release
+#   by reusing its already-built and tested assets. Yocto is never re-run here.
+#
+# TYPICAL STEPS
+#   1. A prerelease tag (e.g. v0.9.0-rc1) exists with uploaded assets.
+#   2. Run THIS workflow:
+#      - source_tag     : leave empty to auto-pick the latest prerelease, or
+#                         enter an exact tag (e.g. v0.9.0-rc1) to pin a specific one.
+#      - release_strategy: patch / minor / major / custom
+#                         Controls how the new stable version number is computed
+#                         from the current highest stable tag.
+#                         Use "custom" + the "version" field for full control.
+#      - release_channel : "release" (default) publishes a stable release.
+#                          Use "prerelease" to re-publish as another prerelease
+#                          (e.g. promoting rc1 → rc2 without a full rebuild).
+#   3. The workflow copies all assets from the source prerelease and creates
+#      a new GitHub Release at the computed/custom tag.
+#      The release is NOT marked as "latest" at this point.
+#
+# MARKING AS LATEST (after testing)
+#   Once the promoted release has been validated on hardware / QEMU, run:
+#     .github/workflows/mark-release-latest.yml
+#   That workflow flips the release to prerelease=false and make_latest=true.
+#   Keeping these two steps separate ensures "latest" always points to a
+#   tested, signed-off image.
+# ---------------------------------------------------------------------------
 
 on:
   workflow_dispatch:
     inputs:
-      source_tag_selection:
-        description: "How to choose source prerelease tag"
-        required: true
-        default: "latest"
-        type: choice
-        options:
-          - latest
-          - manual
       source_tag:
-        description: "Existing prerelease tag to promote (required when source_tag_selection=manual)"
+        description: "Prerelease tag to promote (e.g. v1.2.3-rc1). Leave empty to auto-select the latest prerelease."
         required: false
         default: ""
         type: string
@@ -36,14 +54,6 @@ on:
         required: false
         default: ""
         type: string
-      make_latest:
-        description: "Mark promoted stable release as latest"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
       release_channel:
         description: "Publish target as prerelease or stable release"
         required: true
@@ -65,7 +75,6 @@ jobs:
     name: Promote Existing Release Assets
     runs-on: ubuntu-22.04
     env:
-      SOURCE_TAG_SELECTION: ${{ github.event.inputs.source_tag_selection }}
       SOURCE_TAG_INPUT: ${{ github.event.inputs.source_tag }}
       RELEASE_STRATEGY: ${{ github.event.inputs.release_strategy }}
       CUSTOM_VERSION: ${{ github.event.inputs.version }}
@@ -83,8 +92,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
-            const selection = process.env.SOURCE_TAG_SELECTION;
-            const sourceTagInput = process.env.SOURCE_TAG_INPUT;
+            const sourceTagInput = (process.env.SOURCE_TAG_INPUT || '').trim();
 
             const releases = await github.paginate(github.rest.repos.listReleases, {
               owner,
@@ -102,17 +110,14 @@ jobs:
             }
 
             let selected;
-            if (selection === 'manual') {
-              if (!sourceTagInput) {
-                core.setFailed('source_tag is required when source_tag_selection=manual.');
-                return;
-              }
+            if (sourceTagInput) {
               selected = candidates.find(r => r.tag_name === sourceTagInput);
               if (!selected) {
-                core.setFailed(`Requested source_tag '${sourceTagInput}' was not found among available prereleases with assets.`);
+                core.setFailed(`Tag '${sourceTagInput}' was not found among prereleases with assets.`);
                 return;
               }
             } else {
+              // No tag specified — auto-select the latest prerelease
               selected = candidates[0];
             }
 
@@ -134,10 +139,8 @@ jobs:
           set -euo pipefail
           if [[ "${RELEASE_CHANNEL}" == "prerelease" ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "make_latest=false" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "make_latest=${{ github.event.inputs.make_latest }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compute target stable tag
@@ -300,4 +303,3 @@ jobs:
           prerelease: ${{ steps.channel.outputs.prerelease }}
           draft: false
           generate_release_notes: false
-          make_latest: ${{ steps.channel.outputs.make_latest }}

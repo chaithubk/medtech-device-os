@@ -14,6 +14,8 @@ How MedTech Device OS releases are created, versioned, and distributed.
 - [When to Create Prereleases](#when-to-create-prereleases)
 - [When to Create Stable Releases](#when-to-create-stable-releases)
 - [How to Promote a Tagged Build to Release](#how-to-promote-a-tagged-build-to-release)
+  - [Step 1 — Create the stable release](#step-1--create-the-stable-release-no-yocto-rebuild)
+  - [Step 2 — Mark as latest (after validation)](#step-2--mark-as-latest-after-validation)
 - [Reproducibility and Traceability](#reproducibility-and-traceability)
 - [Retention and Cleanup](#retention-and-cleanup)
 - [Release Checklist](#release-checklist)
@@ -176,6 +178,12 @@ Use the promotion workflow — never rebuild for a stable release.
 
 ## How to Promote a Tagged Build to Release
 
+Promotion is a **two-step process** — promotion and marking as latest are
+deliberately separate so that `latest` always points to a tested, signed-off
+image.
+
+### Step 1 — Create the stable release (no Yocto rebuild)
+
 1. Identify the prerelease tag to promote (e.g., `dev-main-c16c183-r111.1`).
 2. Go to **Actions → Promote Prerelease To Stable Release**
    (`.github/workflows/promote-prerelease-release.yml`).
@@ -183,10 +191,10 @@ Use the promotion workflow — never rebuild for a stable release.
 
    | Input | Value | Notes |
    |---|---|---|
-   | `source_tag` | `dev-main-c16c183-r111.1` | Must be an existing prerelease |
-   | `release_strategy` | `patch` / `minor` / `major` / `custom` | Determines version bump |
+   | `source_tag` | `dev-main-c16c183-r111.1` | Leave empty to auto-pick the latest prerelease |
+   | `release_strategy` | `patch` / `minor` / `major` / `custom` | Determines version bump from current highest stable tag |
    | `version` | `v1.0.0` | Required only when `release_strategy=custom` |
-   | `make_latest` | `true` | Mark as latest on GitHub |
+   | `release_channel` | `release` | Use `prerelease` to re-publish as another prerelease (rc1 → rc2) |
 
 4. The workflow:
    - Validates the source is a prerelease with assets.
@@ -194,11 +202,27 @@ Use the promotion workflow — never rebuild for a stable release.
    - Downloads all assets from the source prerelease.
    - Renders stable release notes from the template.
    - Creates a new GitHub Release tagged `vMAJOR.MINOR.PATCH`.
+   - Release is **not** marked as latest at this point.
 
 5. Verify the new release on GitHub Releases — confirm assets and notes are correct.
 
 > **No Yocto rebuild occurs.** The promoted release contains the exact same
 > artifacts that were tested as a prerelease.
+
+### Step 2 — Mark as latest (after validation)
+
+Once the promoted release has been validated:
+
+1. Go to **Actions → Mark Release as Stable and Latest**
+   (`.github/workflows/mark-release-latest.yml`).
+2. Click **Run workflow** and fill in:
+
+   | Input | Value | Notes |
+   |---|---|---|
+   | `tag` | `v1.0.0` | Leave empty to auto-pick the newest stable release |
+
+3. The workflow sets `prerelease: false` and `make_latest: true` on the release.
+4. Confirm the **Latest** badge appears on the correct release in GitHub Releases.
 
 ---
 
