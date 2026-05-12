@@ -20,7 +20,7 @@ bash scripts/setup-host-qemu-prereqs.sh
 2. Download and boot this release:
 
 ```bash
-bash scripts/download-and-run-qemu.sh --tag {{TARGET_TAG}}
+bash scripts/download-and-run-qemu.sh --release {{TARGET_TAG}}
 ```
 
 3. Verify integrity:

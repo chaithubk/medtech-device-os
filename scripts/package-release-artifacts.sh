@@ -44,6 +44,8 @@ Options:
   --sbom-dir <path>     Optional SBOM directory to include when present.
   --output-dir <path>   Output directory for packaged artifacts. Default: ./artifacts.
   --archive-name <name> Override archive file name.
+  --commit <sha>        Git commit SHA for provenance. Default: current HEAD.
+  --ssh-mode <mode>     SSH access mode (public-hardened or internal-keyed). Default: public-hardened.
   --keep-staging        Keep the temporary staging directory for debugging.
   -h, --help            Show this help.
 EOF
@@ -58,6 +60,8 @@ DEPLOY_DIR="$PROJECT_ROOT/yocto/build/tmp/deploy/images/qemuarm64"
 SBOM_DIR="$PROJECT_ROOT/sbom"
 OUTPUT_DIR="$PROJECT_ROOT/artifacts"
 ARCHIVE_NAME=""
+COMMIT=""
+SSH_MODE="public-hardened"
 KEEP_STAGING=0
 GZIP_LEVEL="${PACKAGE_GZIP_LEVEL:-1}"
 
@@ -85,6 +89,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --archive-name)
       ARCHIVE_NAME="${2:-}"
+      shift 2
+      ;;
+    --commit)
+      COMMIT="${2:-}"
+      shift 2
+      ;;
+    --ssh-mode)
+      SSH_MODE="${2:-public-hardened}"
       shift 2
       ;;
     --keep-staging)
@@ -119,6 +131,27 @@ if [[ ! "$GZIP_LEVEL" =~ ^[1-9]$ ]]; then
   exit 2
 fi
 
+# Default commit to current HEAD if not provided
+if [[ -z "$COMMIT" ]]; then
+  COMMIT="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || echo "unknown")"
+fi
+
+CONTRACT_RECIPE="$PROJECT_ROOT/yocto/meta-medtech/recipes-core/medtech-system/medtech-system.bb"
+TELEMETRY_CONTRACT_REPO=""
+TELEMETRY_CONTRACT_SRCREV=""
+SCHEMA_VERSION=""
+TELEMETRY_CONTRACT_TAG=""
+
+if [[ -f "$CONTRACT_RECIPE" ]]; then
+  TELEMETRY_CONTRACT_REPO="$(sed -n 's#^[[:space:]]*git://\([^;[:space:]]*\).*#https://\1#p' "$CONTRACT_RECIPE" | head -n 1)"
+  TELEMETRY_CONTRACT_SRCREV="$(sed -n 's#^[[:space:]]*SRCREV[[:space:]]*=[[:space:]]*"\([^"]*\)"#\1#p' "$CONTRACT_RECIPE" | head -n 1)"
+  SCHEMA_VERSION="$(sed -n 's#^[[:space:]]*VITALS_CONTRACT_VERSION[[:space:]]*=[[:space:]]*"\([^"]*\)"#\1#p' "$CONTRACT_RECIPE" | head -n 1)"
+fi
+
+if [[ -n "$SCHEMA_VERSION" ]]; then
+  TELEMETRY_CONTRACT_TAG="$SCHEMA_VERSION"
+fi
+
 pick_latest() {
   local pattern="$1"
 
@@ -136,6 +169,15 @@ fi
 if [[ -z "$ROOTFS_PATH" ]]; then
   echo "Error: could not locate a rootfs ext4 for ${IMAGE_NAME} in $DEPLOY_DIR" >&2
   exit 1
+fi
+
+SCHEMA_SHA256=""
+if command -v debugfs >/dev/null 2>&1 && [[ -n "$SCHEMA_VERSION" ]]; then
+  SCHEMA_IN_IMAGE="/usr/share/medtech/contracts/vitals/${SCHEMA_VERSION}.json"
+  if debugfs -R "cat $SCHEMA_IN_IMAGE" "$ROOTFS_PATH" >/tmp/medtech-schema.json 2>/dev/null; then
+    SCHEMA_SHA256="$(sha256sum /tmp/medtech-schema.json | awk '{print $1}')"
+  fi
+  rm -f /tmp/medtech-schema.json
 fi
 
 KERNEL_PATH="$(pick_latest "Image*${MACHINE}*.bin")"
@@ -229,7 +271,16 @@ MANIFEST_JSON="$OUTPUT_DIR/${IMAGE_NAME}-${MACHINE}-manifest.json"
 {
   echo "{" 
   printf '  "image_name": "%s",\n' "$IMAGE_NAME"
+  printf '  "image": "%s",\n' "$IMAGE_NAME"
   printf '  "machine": "%s",\n' "$MACHINE"
+  printf '  "commit": "%s",\n' "$COMMIT"
+  printf '  "build_commit": "%s",\n' "$COMMIT"
+  printf '  "ssh_mode": "%s",\n' "$SSH_MODE"
+  printf '  "telemetry_contract_repo": "%s",\n' "$TELEMETRY_CONTRACT_REPO"
+  printf '  "telemetry_contract_tag": "%s",\n' "$TELEMETRY_CONTRACT_TAG"
+  printf '  "telemetry_contract_srcrev": "%s",\n' "$TELEMETRY_CONTRACT_SRCREV"
+  printf '  "schema_version": "%s",\n' "$SCHEMA_VERSION"
+  printf '  "schema_sha256": "%s",\n' "$SCHEMA_SHA256"
   printf '  "created_at_utc": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '  "archive": "%s",\n' "$ARCHIVE_NAME"
   echo '  "files": ['

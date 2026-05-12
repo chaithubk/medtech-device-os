@@ -1,0 +1,36 @@
+name: Test Tag Push
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_tag:
+        description: "Tag name to test (e.g., v1.0.0-test)"
+        required: true
+
+jobs:
+  test-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test create-git-tag action
+        uses: ./.github/actions/create-git-tag
+        with:
+          tag_name: ${{ github.event.inputs.test_tag }}
+          commit_sha: ${{ github.sha }}
+          push_token: ${{ secrets.CI_TAG_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Verify tag was created and pushed
+        run: |
+          git fetch origin
+          if git rev-parse "refs/tags/${{ github.event.inputs.test_tag }}" >/dev/null 2>&1; then
+            echo "✓ Tag ${{ github.event.inputs.test_tag }} successfully created and pushed"
+            git tag -l | grep "${{ github.event.inputs.test_tag }}"
+          else
+            echo "✗ Tag ${{ github.event.inputs.test_tag }} not found"
+            exit 1
+          fi

@@ -7,6 +7,13 @@ inputs:
   machine:
     description: Yocto machine name.
     required: true
+  commit:
+    description: Git commit SHA for manifest provenance.
+    required: false
+  ssh_mode:
+    description: SSH access mode (public-hardened or internal-keyed).
+    required: false
+    default: 'public-hardened'
   package_timeout_minutes:
     description: Timeout in minutes for packaging command.
     required: false
@@ -25,9 +32,20 @@ runs:
         export PACKAGE_GZIP_LEVEL=1
         export PACKAGE_HEARTBEAT_SECONDS=30
 
+        # Build packaging command with optional parameters.
+        PACKAGE_CMD=(
+          bash scripts/package-release-artifacts.sh
+          --image-name "${{ inputs.image_name }}"
+          --machine "${{ inputs.machine }}"
+          --ssh-mode "${{ inputs.ssh_mode }}"
+        )
+        if [[ -n "${{ inputs.commit }}" ]]; then
+          PACKAGE_CMD+=(--commit "${{ inputs.commit }}")
+        fi
+
         for attempt in 1 2; do
           echo "=== Package release bundle (attempt ${attempt}/2) ==="
-          if timeout "${{ inputs.package_timeout_minutes }}m" bash scripts/package-release-artifacts.sh --image-name "${{ inputs.image_name }}" --machine "${{ inputs.machine }}"; then
+          if timeout "${{ inputs.package_timeout_minutes }}m" "${PACKAGE_CMD[@]}"; then
             echo "Package release bundle succeeded"
             break
           fi
