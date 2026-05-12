@@ -35,21 +35,12 @@ on:
         description: "Optional local.conf lines (one per line) for trimming experiments"
         required: false
         default: ""
-      publish_prerelease:
-        description: "Publish build outputs as a GitHub prerelease"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 env:
   CI_BUILD_IMAGE: core-image-minimal
   SPDX_ENABLED: ${{ github.event.inputs.spdx_enabled || 'false' }}
   VIGILES_ENABLED: ${{ github.event.inputs.vigiles_enabled || 'false' }}
   BUILDHISTORY_ENABLED: ${{ github.event.inputs.buildhistory_enabled || 'false' }}
-  PUBLISH_PRERELEASE: ${{ github.event.inputs.publish_prerelease || 'false' }}
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
@@ -353,33 +344,20 @@ jobs:
           retention_days: '30'
           if_no_files_found: warn
 
-      - name: Prepare minimal prerelease metadata and notes
-        id: release_meta
-        uses: ./.github/actions/prepare-prerelease
-        if: success() && env.PUBLISH_PRERELEASE == 'true'
+      - name: Compute CI tag
+        id: ci_tag
+        if: success()
+        uses: ./.github/actions/compute-ci-tag
         with:
-          image_name: core-image-minimal-${{ github.event.inputs.machine }}
           push_prefix: dev-core-image-minimal-${{ github.event.inputs.machine }}
-          manual_prefix: dev-core-image-minimal-${{ github.event.inputs.machine }}
-          template_path: .github/release-notes/prerelease-common.md
-          output_notes_path: release-notes.md
+          non_push_prefix: dev-core-image-minimal-${{ github.event.inputs.machine }}
 
-      - name: Publish minimal prerelease
-        if: success() && env.PUBLISH_PRERELEASE == 'true'
-        uses: softprops/action-gh-release@v1
+      - name: Create and push CI tag
+        if: success()
+        uses: ./.github/actions/create-git-tag
         with:
-          files: |
-            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-bundle.tar.gz
-            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-manifest.json
-            artifacts/SHA256SUMS
-            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-summary.txt
-            artifacts/core-image-minimal-${{ github.event.inputs.machine }}-packages.txt
-          tag_name: ${{ steps.release_meta.outputs.tag }}
-          body_path: release-notes.md
-          prerelease: true
-          draft: false
-          generate_release_notes: true
-          make_latest: false
+          tag_name: ${{ steps.ci_tag.outputs.tag }}
+          target_sha: ${{ github.sha }}
 
       - name: Cleanup temporary key files
         if: always()

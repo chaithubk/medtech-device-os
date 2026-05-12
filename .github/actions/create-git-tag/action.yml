@@ -1,0 +1,46 @@
+name: Create Git Tag
+description: Create and push a CI tag if it does not already exist.
+inputs:
+  tag_name:
+    description: Full tag name to create.
+    required: true
+  target_sha:
+    description: Commit SHA to tag. Defaults to current commit.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Create and push tag
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        TAG="${{ inputs.tag_name }}"
+        TARGET_SHA="${{ inputs.target_sha }}"
+        [[ -z "$TARGET_SHA" ]] && TARGET_SHA="${GITHUB_SHA}"
+
+        if [[ -z "$TAG" ]]; then
+          echo "tag_name input is required"
+          exit 1
+        fi
+
+        git fetch --tags --quiet
+
+        if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+          echo "Tag already exists locally: ${TAG}"
+          exit 0
+        fi
+
+        if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+          echo "Tag already exists on origin: ${TAG}"
+          exit 0
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        git tag -a "${TAG}" "${TARGET_SHA}" -m "CI build tag ${TAG}"
+        git push origin "refs/tags/${TAG}"
+
+        echo "Created and pushed tag: ${TAG}"

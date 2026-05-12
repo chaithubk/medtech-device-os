@@ -1,0 +1,36 @@
+name: Compute CI Tag
+description: Compute deterministic CI tag names from GitHub context.
+inputs:
+  push_prefix:
+    description: Prefix used when event is push.
+    required: true
+  non_push_prefix:
+    description: Prefix used when event is not push.
+    required: true
+outputs:
+  tag:
+    description: Computed CI tag.
+    value: ${{ steps.meta.outputs.tag }}
+  short_sha:
+    description: 7-character commit SHA.
+    value: ${{ steps.meta.outputs.short_sha }}
+runs:
+  using: composite
+  steps:
+    - name: Compute tag
+      id: meta
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        SHORT_SHA="${GITHUB_SHA::7}"
+        if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          PREFIX="${{ inputs.push_prefix }}"
+        else
+          PREFIX="${{ inputs.non_push_prefix }}"
+        fi
+
+        TAG="${PREFIX}-${SHORT_SHA}-r${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+
+        echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+        echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
