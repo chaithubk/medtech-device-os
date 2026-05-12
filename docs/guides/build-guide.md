@@ -236,7 +236,8 @@ bash scripts/verify-release-package.sh --image-name core-image-medtech
 
 ```bash
 bash scripts/generate-sbom.sh
-# Output: sbom/sbom.json (CycloneDX 1.4 format)
+# Collects SPDX outputs into sbom/
+# Primary source: yocto/build/tmp/deploy/images/qemuarm64/spdx/
 ```
 
 ### Run image policy checks

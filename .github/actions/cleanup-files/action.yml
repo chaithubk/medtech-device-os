@@ -17,6 +17,4 @@ runs:
             rm -f "$file_path"
             echo "Removed: $file_path"
           fi
-        done <<'EOF'
-${{ inputs.paths }}
-EOF
+        done <<< "${{ inputs.paths }}"

@@ -73,3 +73,22 @@ Generated SPDX output remains compatible with:
 - SPDX 2.2 / ISO/IEC 40110
 - NTIA minimum SBOM elements
 - Trivy, Anchore, OWASP Dependency-Check, SPDX tooling
+
+## Status Notes
+
+### Current
+
+- The active SBOM path is Yocto SPDX (`create-spdx`) when enabled
+- CI keeps SPDX disabled by default and records status in `artifacts/spdx-status.txt`
+- `scripts/generate-sbom.sh` is maintained as a compatibility wrapper that
+  delegates to SPDX processing
+
+### Planned
+
+- Improve release-facing compliance packaging guidance for SPDX and Vigiles
+  outputs
+
+### Investigating
+
+- Optional CycloneDX export derived from SPDX outputs for consumers that require
+  CycloneDX specifically

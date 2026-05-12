@@ -36,7 +36,7 @@ It runs on GitHub-hosted Ubuntu 22.04 runners with a 360-minute job timeout.
 10. Uploads artifacts to GitHub Actions
 
 **Additionally on `main` branch push or `workflow_dispatch`:**
-11. Creates a GitHub Release with the QEMU bundle
+11. Creates a prerelease GitHub Release with the QEMU bundle
 
 **If only `.github/workflows/` files changed (PR or push):**
 The full image build is skipped. The pipeline runs a lightweight YAML validation
@@ -49,8 +49,8 @@ step instead, saving runner hours.
 | Event | What happens |
 |---|---|
 | Pull request to `main` | Change detection → full build + validation, or YAML-only validation |
-| Push to `main` | Change detection → full build + semver release (`vX.Y.Z`), or YAML-only validation |
-| `workflow_dispatch` (manual) | Full build + prerelease tagged `dev-<sha>` (can enable SPDX via `spdx_enabled=true`) |
+| Push to `main` | Change detection → full build + prerelease tagged with `dev-main-*`, or YAML-only validation |
+| `workflow_dispatch` (manual) | Full build + prerelease tagged with `dev-manual-*` (can enable SPDX via `spdx_enabled=true`) |
 
 ### SPDX toggle (default OFF)
 
@@ -185,7 +185,7 @@ Each run uploads to GitHub Actions (retained 30 days):
 | `qemu-image-medtech` | `artifacts/` directory with bundle, manifest, SHA256SUMS, `spdx-status.txt`, and optional `spdx/` files |
 | `yocto-debug-failed-recipe` | Task logs for failed recipes (failure runs only) |
 
-### GitHub Releases (main branch only)
+### GitHub Releases (push to main and manual runs)
 
 | Asset | Description |
 |---|---|
@@ -200,12 +200,12 @@ Each run uploads to GitHub Actions (retained 30 days):
 Releases are created automatically:
 
 **Push to `main`:**
-- Tag: `latest` (replaces the previous `latest` release)
-- Marked as latest release (not pre-release)
-- Suitable for end users
+- Tag: unique prerelease tag with `dev-main-*` prefix
+- Marked as pre-release
+- Intended for validation and promotion workflows
 
 **`workflow_dispatch` (manual trigger):**
-- Tag: `dev-<full-sha>` (unique, never overwrites)
+- Tag: unique prerelease tag with `dev-manual-*` prefix
 - Marked as pre-release
 - Suitable for testing release candidates
 
@@ -213,6 +213,31 @@ The release body includes:
 - Commit SHA and branch name
 - Quick start command (one-liner)
 - Checksum verification command
+
+Stable semver releases are created separately by
+`promote-prerelease-release.yml`, which promotes an existing prerelease without
+rebuilding Yocto.
+
+---
+
+## Status Notes
+
+### Current
+
+- Push and manual workflows publish prerelease artifacts only
+- SPDX generation is optional and disabled by default for CI runtime control
+- Vigiles collection is optional and depends on secrets and available outputs
+
+### Planned
+
+- Keep stable semver publication centralized in the promotion workflow to avoid
+   dual release paths
+
+### Investigating
+
+- Whether selected release lanes should require SPDX by policy
+- Whether additional compliance status signals should be surfaced in release
+   notes by default
 
 ---
 

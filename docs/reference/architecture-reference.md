@@ -53,36 +53,36 @@ lifecycle.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  MedTech Device OS (ARM64)                   │
-│                                                              │
+│                  MedTech Device OS (ARM64)                  │
+│                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │                Application Layer                      │   │
-│  │                                                       │   │
+│  │                Application Layer                     │   │
+│  │                                                      │   │
 │  │  ┌─────────────────┐   ┌──────────────────────────┐  │   │
-│  │  │ Vitals Publisher│   │    Edge Analytics         │  │   │
-│  │  │   (Python 3)    │   │  (TensorFlow Lite 2.14)   │  │   │
-│  │  │ Publishes every │   │  Sepsis risk scoring      │  │   │
-│  │  │ 10 seconds      │   │  (ML inference)           │  │   │
+│  │  │ Vitals Publisher│   │    Edge Analytics        │  │   │
+│  │  │   (Python 3)    │   │  (TensorFlow Lite 2.14)  │  │   │
+│  │  │ Publishes every │   │  Sepsis risk scoring     │  │   │
+│  │  │ 10 seconds      │   │  (ML inference)          │  │   │
 │  │  └────────┬────────┘   └───────────┬──────────────┘  │   │
-│  │           │ medtech/vitals/latest   │ medtech/predictions │
-│  │           ▼                         ▼                  │   │
-│  │  ┌─────────────────────────────────────────────────┐  │   │
-│  │  │              Mosquitto MQTT Broker               │  │   │
-│  │  │              (Port 1883, local only)             │  │   │
-│  │  └─────────────────────────────────────────────────┘  │   │
-│  │           │                         │                  │   │
-│  │           ▼                         ▼                  │   │
-│  │  ┌────────────────┐   ┌─────────────────────────────┐ │   │
-│  │  │  Clinician UI  │   │         SSH Server           │ │   │
-│  │  │    (Qt6)       │   │  (port 22 → host port 2222)  │ │   │
-│  │  │  Headless/     │   │                              │ │   │
-│  │  │  offscreen     │   │                              │ │   │
-│  │  └────────────────┘   └─────────────────────────────┘ │   │
+│  │           │ medtech/vitals/latest  │ medtech/predictions │
+│  │           ▼                        ▼                 │   │
+│  │  ┌─────────────────────────────────────────────────┐ │   │
+│  │  │              Mosquitto MQTT Broker              │ │   │
+│  │  │              (Port 1883, local only)            │ │   │
+│  │  └─────────────────────────────────────────────────┘ │   │
+│  │           │                         │                │   │
+│  │           ▼                         ▼                │   │
+│  │  ┌────────────────┐   ┌────────────────────────────┐ │   │
+│  │  │  Clinician UI  │   │        SSH Server          │ │   │
+│  │  │    (Qt6)       │   │ (port 22 → host port 2222) │ │   │
+│  │  │  Headless/     │   │                            │ │   │
+│  │  │  offscreen     │   │                            │ │   │
+│  │  └────────────────┘   └────────────────────────────┘ │   │
 │  └──────────────────────────────────────────────────────┘   │
-│                                                              │
+│                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │              OS Layer (Yocto/Poky kirkstone)          │   │
-│  │  systemd • busybox • Python 3 • OpenSSH               │   │
+│  │              OS Layer (Yocto/Poky kirkstone)         │   │
+│  │  systemd • busybox • Python 3 • OpenSSH              │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```

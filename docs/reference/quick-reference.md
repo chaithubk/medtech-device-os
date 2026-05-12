@@ -145,6 +145,7 @@ bash scripts/package-release-artifacts.sh --image-name core-image-medtech
 
 # Generate SBOM
 bash scripts/generate-sbom.sh
+# Collects SPDX outputs into sbom/
 ```
 
 ---

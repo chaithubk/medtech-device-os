@@ -278,7 +278,7 @@ Clones Yocto layers with retry logic and mirror fallback. Called by `build-robus
 | `verify-release-package.sh` | Active | CI/local release verification |
 | `verify-image.sh` | Active | Build policy checks |
 | `process-sbom.sh` | Active | Collect SPDX outputs |
-| `generate-sbom.sh` | Active | Generate CycloneDX SBOM |
+| `generate-sbom.sh` | Active (compatibility wrapper) | Delegate to `process-sbom.sh` |
 | `audit-image-deps.sh` | Active | Dependency closure analysis |
 | `preflight-check.sh` | Active | Tooling/system preflight checks |
 
@@ -323,10 +323,14 @@ Validates host tools and prerequisites. Called by `build-robust.sh`.
 
 ### `generate-sbom.sh`
 
-Generates CycloneDX SBOM from the built image.
+Compatibility wrapper for SPDX processing.
+
+This script is deprecated as a standalone generator and now delegates to
+`process-sbom.sh`, which collects Yocto `create-spdx` outputs.
+
 ```bash
 bash scripts/generate-sbom.sh
-# Output: sbom/sbom.json
+# Output: collected SPDX files in sbom/
 ```
 
 ### `process-sbom.sh`
@@ -381,7 +385,7 @@ bash scripts/run-qemu.sh
 bash scripts/quick-setup.sh
 bitbake core-image-medtech                            # canonical full build
 bash scripts/build-robust.sh                          # optional deep diagnostics
-bash scripts/generate-sbom.sh                         # generate SBOM
+bash scripts/generate-sbom.sh                         # collect SPDX outputs
 bash scripts/verify-image.sh python-sanity            # check Python packages
 bash scripts/package-release-artifacts.sh --image-name core-image-medtech
 bash scripts/verify-release-package.sh --image-name core-image-medtech

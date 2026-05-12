@@ -154,7 +154,8 @@ ls -lh yocto/build/tmp/deploy/images/qemuarm64/core-image-medtech-qemuarm64.ext4
 
 ```bash
 bash scripts/generate-sbom.sh
-# Output: sbom/sbom.json (CycloneDX 1.4 format)
+# Collects SPDX outputs into sbom/
+# Primary source: yocto/build/tmp/deploy/images/qemuarm64/spdx/
 ```
 
 ### Package for release (creates the bundle.tar.gz)

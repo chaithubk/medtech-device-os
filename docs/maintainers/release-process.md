@@ -123,13 +123,25 @@ bash scripts/download-and-run-qemu.sh
 bash scripts/download-and-run-qemu.sh --release dev-abc1234
 ```
 
-See [QUICK_START_USER.md](QUICK_START_USER.md) for full instructions.
+See [../getting-started/quick-start-user.md](../getting-started/quick-start-user.md)
+for full instructions.
 
 ---
 
-## Future: Semantic Versioning
+## Status Notes
 
-Implemented in current process:
+### Current
+
 - Separate prerelease and stable channels
 - Manual stable promotion with semantic version strategy
 - Stable releases created from prerelease assets (no rebuild)
+
+### Planned
+
+- Keep prerelease build generation in CI and stable publication in promotion
+    workflow to avoid accidental rebuild divergence
+
+### Investigating
+
+- Whether to enforce additional release-gate checks before promotion
+    (for example, requiring specific compliance artifacts)

@@ -381,7 +381,7 @@ jobs:
           generate_release_notes: true
           make_latest: false
 
-      - name: Cleanup Vigiles key file
+      - name: Cleanup temporary key files
         if: always()
         uses: ./.github/actions/cleanup-files
         with:
