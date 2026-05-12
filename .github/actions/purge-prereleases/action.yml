@@ -1,0 +1,54 @@
+name: Purge Old Prereleases
+description: Delete oldest prereleases matching a prefix, keeping the newest N.
+inputs:
+  prefix:
+    description: Release tag prefix to match (for example, dev-main-).
+    required: true
+  keep:
+    description: Number of newest matching prereleases to retain.
+    required: false
+    default: "10"
+runs:
+  using: composite
+  steps:
+    - name: Delete old prereleases and tags
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const keepRaw = `${{ inputs.keep }}`;
+          const prefix = `${{ inputs.prefix }}`;
+          const keep = Number.parseInt(keepRaw, 10);
+
+          if (!Number.isInteger(keep) || keep < 0) {
+            core.setFailed(`Invalid keep value '${keepRaw}'. Expected a non-negative integer.`);
+            return;
+          }
+
+          const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+          const releases = await github.paginate(github.rest.repos.listReleases, {
+            owner,
+            repo,
+            per_page: 100,
+          });
+
+          const candidates = releases
+            .filter((r) => r.prerelease && typeof r.tag_name === 'string' && r.tag_name.startsWith(prefix))
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+          const toDelete = candidates.slice(keep);
+          core.info(`Matched ${candidates.length} prerelease(s) with prefix '${prefix}'. Keeping ${keep}.`);
+
+          for (const rel of toDelete) {
+            core.info(`Deleting release ${rel.tag_name} (id=${rel.id})`);
+            await github.rest.repos.deleteRelease({ owner, repo, release_id: rel.id });
+
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${rel.tag_name}` });
+              core.info(`Deleted tag ${rel.tag_name}`);
+            } catch (error) {
+              core.warning(`Could not delete tag ${rel.tag_name}: ${error.message}`);
+            }
+          }
+
+          core.info(`Purged ${toDelete.length} old prerelease(s).`);

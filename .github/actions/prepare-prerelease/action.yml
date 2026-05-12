@@ -2,71 +2,91 @@ name: Prepare Prerelease Metadata
 description: Compute prerelease tag and render shared prerelease release notes.
 inputs:
   image_name:
-    description: Image label for release notes.
+    description: Image label for release notes (e.g. core-image-medtech-qemuarm64).
     required: true
   push_prefix:
-    description: Prefix used when event is push.
+    description: Tag prefix used when triggered by a branch push.
     required: true
   manual_prefix:
-    description: Prefix used for non-push events.
+    description: Tag prefix used for non-push events (workflow_dispatch etc.).
     required: true
+  ssh_mode:
+    description: SSH access mode baked into this build (public-hardened or internal-keyed).
+    required: false
+    default: 'public-hardened'
   template_path:
     description: Path to prerelease template markdown.
     required: false
     default: .github/release-notes/prerelease-common.md
   output_notes_path:
-    description: Output path for rendered notes.
+    description: Output path for rendered release notes.
     required: false
     default: release-notes.md
   extra_notes:
-    description: Optional markdown appended to rendered notes.
+    description: Optional markdown block appended after the rendered template.
     required: false
     default: ''
 outputs:
   tag:
-    description: Computed prerelease tag.
+    description: Computed prerelease tag (e.g. dev-main-abc1234-r42.1).
     value: ${{ steps.meta.outputs.tag }}
+  short_sha:
+    description: Seven-character commit short SHA.
+    value: ${{ steps.meta.outputs.short_sha }}
   prerelease:
-    description: Whether target release is prerelease.
+    description: Whether the target release is a prerelease (always true here).
     value: ${{ steps.meta.outputs.prerelease }}
   make_latest:
-    description: Whether release should be latest.
+    description: Whether GitHub should mark this release as latest (always false for prereleases).
     value: ${{ steps.meta.outputs.make_latest }}
   channel:
-    description: Release channel name.
+    description: Release channel name (prerelease).
     value: ${{ steps.meta.outputs.channel }}
 runs:
   using: composite
   steps:
-    - name: Compute prerelease tag
+    - name: Compute prerelease tag and metadata
       id: meta
       shell: bash
       run: |
         set -euo pipefail
 
         SHORT_SHA="${GITHUB_SHA::7}"
+
         if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
           TAG="${{ inputs.push_prefix }}-${SHORT_SHA}-r${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
         else
           TAG="${{ inputs.manual_prefix }}-${SHORT_SHA}-r${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
         fi
 
-        echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-        echo "prerelease=true" >> "$GITHUB_OUTPUT"
-        echo "make_latest=false" >> "$GITHUB_OUTPUT"
-        echo "channel=prerelease" >> "$GITHUB_OUTPUT"
+        REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
 
-    - name: Render release notes
+        echo "tag=${TAG}"             >> "$GITHUB_OUTPUT"
+        echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+        echo "repo_url=${REPO_URL}"   >> "$GITHUB_OUTPUT"
+        echo "prerelease=true"        >> "$GITHUB_OUTPUT"
+        echo "make_latest=false"      >> "$GITHUB_OUTPUT"
+        echo "channel=prerelease"     >> "$GITHUB_OUTPUT"
+
+    - name: Render release notes from template
       shell: bash
       run: |
         set -euo pipefail
+
+        # Derive repo slug (owner/repo) from GITHUB_REPOSITORY
+        REPO_SLUG="${GITHUB_REPOSITORY}"
+
         sed \
           -e "s|{{VERSION}}|${{ steps.meta.outputs.tag }}|g" \
+          -e "s|{{SHORT_SHA}}|${{ steps.meta.outputs.short_sha }}|g" \
           -e "s|{{COMMIT}}|${GITHUB_SHA}|g" \
           -e "s|{{BRANCH}}|${GITHUB_REF_NAME}|g" \
           -e "s|{{IMAGE}}|${{ inputs.image_name }}|g" \
+          -e "s|{{SSH_MODE}}|${{ inputs.ssh_mode }}|g" \
+          -e "s|{{REPO_URL}}|${{ steps.meta.outputs.repo_url }}|g" \
+          -e "s|{{REPO_SLUG}}|${REPO_SLUG}|g" \
           "${{ inputs.template_path }}" > "${{ inputs.output_notes_path }}"
 
         if [[ -n "${{ inputs.extra_notes }}" ]]; then
-          printf '\n%s\n' "${{ inputs.extra_notes }}" >> "${{ inputs.output_notes_path }}"
+          printf '\n---\n\n%s\n' "${{ inputs.extra_notes }}" >> "${{ inputs.output_notes_path }}"
         fi
