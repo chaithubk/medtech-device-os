@@ -39,6 +39,14 @@ on:
         options:
           - public-hardened
           - internal-keyed
+      publish_prerelease:
+        description: 'Create a GitHub prerelease for this manual run. Set to false to build and validate without publishing a release.'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 concurrency:
   group: smart-device-os-${{ github.ref }}
@@ -110,7 +118,62 @@ jobs:
           echo "Build-affecting files:"
           echo "Result: skip_build=$SKIP_BUILD (Build affected: $([ "$SKIP_BUILD" == "false" ] && echo "YES" || echo "NO"))"
 
-  # ── 2a. Non-build-affecting changes: validate YAML, skip image build ────────
+  # ── 2a. Fast-fail CI sanity checks (always run) ─────────────────────────────
+  fast-fail-ci-sanity:
+    name: Fast-Fail CI Sanity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate workflow and composite action YAML
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'PYEOF'
+          import glob
+          import sys
+          import yaml
+
+          files = sorted(set(
+              glob.glob('.github/workflows/*.yml') +
+              glob.glob('.github/workflows/*.yaml') +
+              glob.glob('.github/actions/*/action.yml') +
+              glob.glob('.github/actions/*/action.yaml')
+          ))
+
+          errors = []
+          for path in files:
+              try:
+                  with open(path, encoding='utf-8') as fh:
+                      yaml.safe_load(fh)
+                  print(f"OK  {path}")
+              except yaml.YAMLError as exc:
+                  print(f"ERR {path}: {exc}")
+                  errors.append(path)
+
+          if errors:
+              print(f"\n{len(errors)} file(s) failed YAML validation.")
+              sys.exit(1)
+
+          print(f"\nAll {len(files)} YAML file(s) are valid.")
+          PYEOF
+
+      - name: Validate bash script syntax
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(scripts/*.sh)
+          if (( ${#files[@]} == 0 )); then
+            echo "No shell scripts found under scripts/."
+            exit 0
+          fi
+
+          for file in "${files[@]}"; do
+            echo "Checking ${file}"
+            bash -n "${file}"
+          done
+          echo "All shell scripts passed bash -n syntax checks."
+
+  # ── 2b. Non-build-affecting changes: validate YAML, skip image build ────────
   validate-yaml:
     name: Validate Workflow YAML
     needs: detect-changes
@@ -144,10 +207,12 @@ jobs:
           print("\nAll workflow files are valid YAML.")
           PYEOF
 
-  # ── 2b. Full image build path ─────────────────────────────────────────────
+  # ── 2c. Full image build path ─────────────────────────────────────────────
   build:
     name: Build Yocto Image
-    needs: detect-changes
+    needs:
+      - detect-changes
+      - fast-fail-ci-sanity
     if: needs.detect-changes.outputs.skip_build == 'false'
     runs-on: ubuntu-22.04
     # GitHub-hosted runners cap a single job at 360 minutes.
@@ -712,23 +777,17 @@ jobs:
       - name: Prepare prerelease metadata and notes
         id: release_meta
         uses: ./.github/actions/prepare-prerelease
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_prerelease != 'false')
         with:
           image_name: core-image-medtech-qemuarm64
           push_prefix: dev-main
           manual_prefix: dev-manual
+          ssh_mode: ${{ steps.ssh_access.outputs.mode }}
           template_path: .github/release-notes/prerelease-common.md
           output_notes_path: release-notes.md
-          extra_notes: |
-            **SSH Access Policy**
-            - `public-hardened`: no default admin SSH key is baked into the image.
-            - `internal-keyed`: login is `ssh -i <matching-private-key> -p 2222 medadmin@localhost`.
-
-            **Runtime SSH Mode For This Build**
-            - ${{ steps.ssh_access.outputs.mode }}
 
       - name: Create GitHub Release with Artifacts
-        if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
+        if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_prerelease != 'false'))
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -755,3 +814,20 @@ jobs:
         run: |
           echo "=== FINAL DISK STATUS ==="
           df -h / | tail -1
+
+  # ── Purge old prerelease tags (push to main only) ──────────────────────────
+  # Keeps the last 10 dev-main-* prereleases to prevent release list bloat.
+  # Runs only after a successful build+publish on main.
+  purge-old-prereleases:
+    name: Purge Old dev-main Prereleases
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Delete oldest dev-main-* prereleases beyond the retention limit
+        uses: ./.github/actions/purge-prereleases
+        with:
+          prefix: dev-main-
+          keep: '10'

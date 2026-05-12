@@ -166,22 +166,80 @@ jobs:
             echo "- Target stable tag: ${{ steps.target.outputs.target_tag }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Resolve source commit from manifest
+        id: source_meta
+        run: |
+          set -euo pipefail
+          MANIFEST=$(find promote-assets -maxdepth 1 -name '*-manifest.json' | head -1 || true)
+          COMMIT=""
+          SHORT_SHA=""
+          IMAGE_NAME=""
+          SSH_MODE="public-hardened"
+          if [[ -n "$MANIFEST" ]]; then
+            mapfile -t META_FIELDS < <(python3 - "$MANIFEST" <<'PY'
+              import json
+              import sys
+
+              manifest_path = sys.argv[1]
+              commit = ""
+              image = ""
+              ssh_mode = "public-hardened"
+
+              try:
+                with open(manifest_path, "r", encoding="utf-8") as fh:
+                  data = json.load(fh)
+                commit = data.get("commit") or data.get("build_commit") or ""
+                image = data.get("image") or ""
+                ssh_mode = data.get("ssh_mode") or "public-hardened"
+              except Exception:
+                pass
+
+              print(commit)
+              print(image)
+              print(ssh_mode)
+              PY
+            )
+            COMMIT="${META_FIELDS[0]:-}"
+            IMAGE_NAME="${META_FIELDS[1]:-}"
+            SSH_MODE="${META_FIELDS[2]:-public-hardened}"
+          fi
+          [[ -z "$COMMIT" ]] && COMMIT="${GITHUB_SHA}"
+          SHORT_SHA="${COMMIT::7}"
+          [[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="core-image-medtech-qemuarm64"
+          echo "commit=${COMMIT}"       >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE_NAME}"    >> "$GITHUB_OUTPUT"
+          echo "ssh_mode=${SSH_MODE}"   >> "$GITHUB_OUTPUT"
+
+      - name: Render stable release notes
+        id: render_notes
+        run: |
+          set -euo pipefail
+          TEMPLATE=".github/release-notes/stable-release.md"
+          OUTPUT="stable-release-notes.md"
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          REPO_SLUG="${GITHUB_REPOSITORY}"
+
+          sed \
+            -e "s|{{TARGET_TAG}}|${{ steps.target.outputs.target_tag }}|g" \
+            -e "s|{{SOURCE_TAG}}|${SOURCE_TAG}|g" \
+            -e "s|{{IMAGE}}|${{ steps.source_meta.outputs.image }}|g" \
+            -e "s|{{COMMIT}}|${{ steps.source_meta.outputs.commit }}|g" \
+            -e "s|{{SHORT_SHA}}|${{ steps.source_meta.outputs.short_sha }}|g" \
+            -e "s|{{SSH_MODE}}|${{ steps.source_meta.outputs.ssh_mode }}|g" \
+            -e "s|{{REPO_URL}}|${REPO_URL}|g" \
+            -e "s|{{REPO_SLUG}}|${REPO_SLUG}|g" \
+            "$TEMPLATE" > "$OUTPUT"
+
+          echo "notes_path=${OUTPUT}" >> "$GITHUB_OUTPUT"
+
       - name: Create stable release from promoted assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.target.outputs.target_tag }}
           files: promote-assets/*
-          body: |
-            **Promoted Stable Release**
-            - Version: ${{ steps.target.outputs.target_tag }}
-            - Source prerelease: ${{ env.SOURCE_TAG }}
-            - Source release: ${{ steps.source.outputs.source_name }}
-            - Source asset count: ${{ steps.source.outputs.asset_count }}
-            - Promotion strategy: ${{ github.event.inputs.release_strategy }}
-            - Promoted by run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            This release reuses previously built assets and does not trigger a Yocto rebuild.
+          body_path: ${{ steps.render_notes.outputs.notes_path }}
           prerelease: false
           draft: false
-          generate_release_notes: true
+          generate_release_notes: false
           make_latest: ${{ github.event.inputs.make_latest }}
