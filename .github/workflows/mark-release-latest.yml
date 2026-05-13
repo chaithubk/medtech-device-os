@@ -1,16 +1,14 @@
-name: Mark Release as Stable and Latest
+name: Mark Release as Stable
 
 # ---------------------------------------------------------------------------
 # RELEASE PROCESS — how to use this workflow
 # ---------------------------------------------------------------------------
 # PURPOSE
-#   Second and final step of the release promotion process.
-#   Run this AFTER the promoted release has been booted, validated on
-#   hardware / QEMU, and signed off by the team.
-#
-#   It updates an existing GitHub release to:
-#     - prerelease: false  (marks it as a stable release)
-#     - make_latest: true  (points the "Latest" badge to this release)
+#   Final sign-off step after a prerelease has been validated.
+#   Flips an existing prerelease to stable (prerelease: false).
+#   make_latest is NEVER set — each image type has its own release series;
+#   "latest" for a given image is simply the highest semver tag with that
+#   image's prefix (e.g. core-image-minimal-v*, core-image-medtech-v*).
 #
 # WHEN TO RUN
 #   Only after ALL of the following are confirmed:
@@ -21,19 +19,29 @@ name: Mark Release as Stable and Latest
 #     - Team has agreed the release is production-ready.
 #
 # HOW TO USE
-#   - tag : leave empty to auto-select the newest stable release, or
-#           enter an exact tag (e.g. v1.2.3) to target a specific one.
+#   - image_type : select the image this release belongs to (used for
+#                  auto-selection filtering when tag is left empty).
+#   - tag        : leave empty to auto-select the newest prerelease for
+#                  this image type, or enter an exact tag to target one.
 #
 # PRECEDING STEP
-#   Use .github/workflows/promote-prerelease-release.yml first to create
-#   the versioned release from a validated prerelease.
+#   Use .github/workflows/promote-prerelease-release.yml with
+#   release_channel=prerelease first to create the versioned release.
 # ---------------------------------------------------------------------------
 
 on:
   workflow_dispatch:
     inputs:
+      image_type:
+        description: "Image type to filter when auto-selecting the release."
+        required: true
+        default: "core-image-minimal"
+        type: choice
+        options:
+          - core-image-minimal
+          - core-image-medtech
       tag:
-        description: "Stable release tag to mark as latest (e.g. v1.2.3). Leave empty to auto-select the newest stable release."
+        description: "Prerelease tag to mark as stable (e.g. core-image-minimal-v1.2.3). Leave empty to auto-select the newest prerelease for this image type."
         required: false
         default: ""
         type: string
@@ -46,8 +54,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  mark-latest:
-    name: Mark Release as Stable and Latest
+  mark-stable:
+    name: Mark Release as Stable
     runs-on: ubuntu-22.04
 
     steps:
@@ -55,12 +63,15 @@ jobs:
         id: resolve
         uses: actions/github-script@v7
         env:
+          IMAGE_TYPE: ${{ github.event.inputs.image_type }}
           TAG_INPUT: ${{ github.event.inputs.tag }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
             const tagInput = (process.env.TAG_INPUT || '').trim();
+            const imageType = (process.env.IMAGE_TYPE || '').trim();
+            const tagPrefix = imageType ? `${imageType}-v` : '';
 
             const releases = await github.paginate(github.rest.repos.listReleases, {
               owner,
@@ -68,12 +79,13 @@ jobs:
               per_page: 100,
             });
 
-            // Stable (non-prerelease) releases, newest first
-            const stable = releases
-              .filter(r => !r.prerelease && !r.draft)
+            // Prereleases for this image type, newest first
+            const candidates = releases
+              .filter(r => r.prerelease && !r.draft &&
+                (tagPrefix ? r.tag_name.startsWith(tagPrefix) : true))
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-            const preview = stable.slice(0, 5).map((r, i) =>
+            const preview = candidates.slice(0, 5).map((r, i) =>
               `${i + 1}. \`${r.tag_name}\` — ${r.name || r.tag_name} (${r.created_at.slice(0, 10)})`
             ).join('\n');
 
@@ -86,25 +98,27 @@ jobs:
                 return;
               }
             } else {
-              // No tag specified — auto-select the newest stable release
-              if (stable.length === 0) {
-                core.setFailed('No stable (non-prerelease) releases found.');
+              if (candidates.length === 0) {
+                core.setFailed(
+                  `No prerelease found${imageType ? ` for image type '${imageType}'` : ''}. ` +
+                  `Run the promote workflow with release_channel=prerelease first.`
+                );
                 return;
               }
-              selected = stable[0];
+              selected = candidates[0];
             }
 
             core.setOutput('release_id', String(selected.id));
             core.setOutput('tag_name', selected.tag_name);
 
             core.summary
-              .addHeading('Last 5 Stable Releases')
+              .addHeading('Prerelease Candidates')
               .addRaw(preview || '- none', true)
               .addHeading('Selected Release')
               .addRaw(`\`${selected.tag_name}\` — ID ${selected.id}`, true)
               .write();
 
-      - name: Mark release as stable and latest
+      - name: Mark release as stable
         uses: actions/github-script@v7
         env:
           RELEASE_ID: ${{ steps.resolve.outputs.release_id }}
@@ -121,12 +135,17 @@ jobs:
               repo,
               release_id: releaseId,
               prerelease: false,
-              make_latest: 'true',
+              make_latest: 'false',
             });
 
             core.summary
-              .addHeading('Release Marked as Stable and Latest')
-              .addRaw(`- Tag: \`${tagName}\`\n- prerelease: false\n- make_latest: true`, true)
+              .addHeading('Release Marked as Stable')
+              .addRaw(
+                `- Tag: \`${tagName}\`\n` +
+                `- prerelease: false\n` +
+                `- make_latest: not changed (each image type has its own release series)`,
+                true
+              )
               .write();
 
-            core.info(`Release ${tagName} (ID ${releaseId}) is now marked as stable and latest.`);
+            core.info(`Release ${tagName} (ID ${releaseId}) is now marked as stable.`);

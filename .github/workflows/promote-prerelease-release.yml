@@ -1,44 +1,66 @@
-name: Promote Prerelease To Stable Release
+name: Promote CI Build To Release
 
 # ---------------------------------------------------------------------------
 # RELEASE PROCESS — how to use this workflow
 # ---------------------------------------------------------------------------
 # PURPOSE
-#   Promotes an existing prerelease (rc/nightly) to a versioned stable release
-#   by reusing its already-built and tested assets. Yocto is never re-run here.
+#   Promotes a successful CI build (identified by its dev-* git tag) to a
+#   versioned GitHub Release. Yocto is never re-run here.
+#   Artifacts are downloaded directly from the originating workflow run.
+#
+# TAG FORMAT
+#   Each image type has its own independent semver sequence:
+#     core-image-minimal-v1.0.0
+#     core-image-medtech-v2.3.1
+#   This allows both image types to coexist as separate stable releases.
+#   "Latest for image X" = highest semver tag with prefix "{image_type}-v*".
+#   GitHub's repo-wide "latest" flag is never used.
 #
 # TYPICAL STEPS
-#   1. A prerelease tag (e.g. v0.9.0-rc1) exists with uploaded assets.
+#   1. A build workflow runs successfully and creates a dev-* git tag, e.g.:
+#        dev-core-image-minimal-qemuarm64-82521d2-r6.1
 #   2. Run THIS workflow:
-#      - source_tag     : leave empty to auto-pick the latest prerelease, or
-#                         enter an exact tag (e.g. v0.9.0-rc1) to pin a specific one.
+#      - image_type      : which image this release is for.
+#      - source_tag      : the exact dev-* git tag from step 1, or leave empty
+#                          to auto-select the latest dev-* tag for this image.
+#      - artifact_name   : workflow run artifact holding the release bundle.
 #      - release_strategy: patch / minor / major / custom
-#                         Controls how the new stable version number is computed
-#                         from the current highest stable tag.
-#                         Use "custom" + the "version" field for full control.
-#      - release_channel : "release" (default) publishes a stable release.
-#                          Use "prerelease" to re-publish as another prerelease
-#                          (e.g. promoting rc1 → rc2 without a full rebuild).
-#   3. The workflow copies all assets from the source prerelease and creates
-#      a new GitHub Release at the computed/custom tag.
-#      The release is NOT marked as "latest" at this point.
+#                          Semver is computed independently per image type.
+#      - release_channel : "prerelease" to publish for testing first;
+#                          "release" to publish directly as stable.
+#   3. The workflow creates a GitHub Release tagged {image_type}-vX.Y.Z.
+#      make_latest is NEVER set — each image type manages its own latest.
 #
-# MARKING AS LATEST (after testing)
-#   Once the promoted release has been validated on hardware / QEMU, run:
-#     .github/workflows/mark-release-latest.yml
-#   That workflow flips the release to prerelease=false and make_latest=true.
-#   Keeping these two steps separate ensures "latest" always points to a
-#   tested, signed-off image.
+# MARKING AS STABLE (after prerelease testing)
+#   If release_channel=prerelease, once validated run:
+#     .github/workflows/mark-release-stable.yml
+#   That workflow flips prerelease=false. make_latest is not touched.
 # ---------------------------------------------------------------------------
 
 on:
   workflow_dispatch:
     inputs:
+      image_type:
+        description: "Image type being released. Determines the tag prefix and semver sequence."
+        required: true
+        default: "core-image-minimal"
+        type: choice
+        options:
+          - core-image-minimal
+          - core-image-medtech
       source_tag:
-        description: "Prerelease tag to promote (e.g. v1.2.3-rc1). Leave empty to auto-select the latest prerelease."
+        description: "CI git tag to promote (e.g. dev-core-image-minimal-qemuarm64-82521d2-r6.1). Leave empty to auto-select the latest dev-* tag for this image type."
         required: false
         default: ""
         type: string
+      artifact_name:
+        description: "Workflow run artifact containing the release bundle."
+        required: true
+        default: "core-image-minimal-analysis"
+        type: choice
+        options:
+          - core-image-minimal-analysis
+          - qemu-image-medtech
       release_strategy:
         description: "Stable version strategy"
         required: true
@@ -75,7 +97,9 @@ jobs:
     name: Promote Existing Release Assets
     runs-on: ubuntu-22.04
     env:
+      IMAGE_TYPE: ${{ github.event.inputs.image_type }}
       SOURCE_TAG_INPUT: ${{ github.event.inputs.source_tag }}
+      ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
       RELEASE_STRATEGY: ${{ github.event.inputs.release_strategy }}
       CUSTOM_VERSION: ${{ github.event.inputs.version }}
       RELEASE_CHANNEL: ${{ github.event.inputs.release_channel }}
@@ -85,7 +109,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve source prerelease tag
+      - name: Resolve source CI tag and workflow run
         id: source
         uses: actions/github-script@v7
         with:
@@ -93,44 +117,81 @@ jobs:
           script: |
             const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
             const sourceTagInput = (process.env.SOURCE_TAG_INPUT || '').trim();
+            const imageType = (process.env.IMAGE_TYPE || '').trim();
 
-            const releases = await github.paginate(github.rest.repos.listReleases, {
+            // List all tags, look for dev-* CI tags produced by build workflows
+            const allTags = await github.paginate(github.rest.repos.listTags, {
               owner,
               repo,
               per_page: 100,
             });
 
-            const candidates = releases
-              .filter(r => r.prerelease && (r.assets || []).length > 0)
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-            if (candidates.length === 0) {
-              core.setFailed('No prerelease with assets was found to promote.');
-              return;
-            }
-
-            let selected;
+            let selectedTag;
             if (sourceTagInput) {
-              selected = candidates.find(r => r.tag_name === sourceTagInput);
-              if (!selected) {
-                core.setFailed(`Tag '${sourceTagInput}' was not found among prereleases with assets.`);
+              selectedTag = allTags.find(t => t.name === sourceTagInput);
+              if (!selectedTag) {
+                core.setFailed(`Git tag '${sourceTagInput}' was not found in this repository.`);
                 return;
               }
             } else {
-              // No tag specified — auto-select the latest prerelease
-              selected = candidates[0];
+              // Auto-select: prefer dev-* tags that contain the image type name
+              const devTags = allTags.filter(t =>
+                t.name.startsWith('dev-') &&
+                (imageType ? t.name.includes(imageType) : true)
+              );
+              if (devTags.length === 0) {
+                core.setFailed(
+                  `No dev-* CI tags found${imageType ? ` matching image type '${imageType}'` : ''}. ` +
+                  `Run a build workflow first, or specify source_tag explicitly.`
+                );
+                return;
+              }
+              selectedTag = devTags[0];
             }
 
-            core.setOutput('source_tag', selected.tag_name);
-            core.setOutput('source_name', selected.name || selected.tag_name);
-            core.setOutput('asset_count', String((selected.assets || []).length));
+            const tagName = selectedTag.name;
+            const commitSha = selectedTag.commit.sha;
 
-            const preview = candidates.slice(0, 10).map(r => `- ${r.tag_name} (${(r.assets || []).length} assets)`).join('\n');
+            // Parse run number from tag — expected format: ...-r<N>.<attempt>
+            const runMatch = tagName.match(/-r(\d+)\.\d+$/);
+            if (!runMatch) {
+              core.setFailed(`Cannot parse run number from tag '${tagName}'. Expected format ending in -r<N>.<attempt> (e.g. dev-core-image-minimal-qemuarm64-abc1234-r6.1).`);
+              return;
+            }
+            const runNumber = parseInt(runMatch[1], 10);
+
+            // Find the successful workflow run that created this tag
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner,
+              repo,
+              head_sha: commitSha,
+              status: 'success',
+              per_page: 50,
+            });
+
+            const matchingRun = runs.find(r => r.run_number === runNumber);
+            if (!matchingRun) {
+              core.setFailed(
+                `No successful workflow run #${runNumber} found for commit ${commitSha.slice(0, 7)} (tag: ${tagName}).\n` +
+                `Ensure the build run completed successfully and the artifact '${process.env.ARTIFACT_NAME}' was uploaded.`
+              );
+              return;
+            }
+
+            core.setOutput('source_tag', tagName);
+            core.setOutput('source_name', matchingRun.display_title || tagName);
+            core.setOutput('run_id', String(matchingRun.id));
+
+            const devTagPreview = allTags
+              .filter(t => t.name.startsWith('dev-') && (imageType ? t.name.includes(imageType) : true))
+              .slice(0, 10)
+              .map(t => `- ${t.name}`)
+              .join('\n');
             core.summary
-              .addHeading('Available Source Prereleases')
-              .addRaw(preview || '- none', true)
+              .addHeading('Available CI Tags')
+              .addRaw(devTagPreview || '- none', true)
               .addHeading('Selected Source')
-              .addRaw(`- ${selected.tag_name}`, true)
+              .addRaw(`- ${tagName} → run #${runNumber} (run_id: ${matchingRun.id})`, true)
               .write();
 
       - name: Resolve release channel flags
@@ -150,6 +211,10 @@ jobs:
 
           git fetch --tags --quiet
 
+          # Tag format: {image_type}-vMAJOR.MINOR.PATCH
+          # Semver is tracked independently per image type.
+          TAG_PREFIX="${IMAGE_TYPE}-v"
+
           if [[ "$RELEASE_STRATEGY" == "custom" ]]; then
             if [[ -z "$CUSTOM_VERSION" ]]; then
               echo "release_strategy=custom requires version input (vMAJOR.MINOR.PATCH)."
@@ -159,28 +224,32 @@ jobs:
               echo "Invalid custom version '$CUSTOM_VERSION'. Expected vMAJOR.MINOR.PATCH."
               exit 1
             fi
-            TARGET_TAG="$CUSTOM_VERSION"
+            TARGET_TAG="${IMAGE_TYPE}-${CUSTOM_VERSION}"
           else
-            LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+            # Find the latest semver tag for THIS image type only
+            LATEST=$(git tag -l "${TAG_PREFIX}[0-9]*.[0-9]*.[0-9]*" \
+              | sed "s|^${TAG_PREFIX}||" \
+              | sort -V \
+              | tail -1)
             if [[ -z "$LATEST" ]]; then
               BASE_MAJOR=0
               BASE_MINOR=1
               BASE_PATCH=0
             else
-              BASE_MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+              BASE_MAJOR=$(echo "$LATEST" | cut -d. -f1)
               BASE_MINOR=$(echo "$LATEST" | cut -d. -f2)
               BASE_PATCH=$(echo "$LATEST" | cut -d. -f3)
             fi
 
             case "$RELEASE_STRATEGY" in
               patch)
-                TARGET_TAG="v${BASE_MAJOR}.${BASE_MINOR}.$((BASE_PATCH + 1))"
+                TARGET_TAG="${TAG_PREFIX}${BASE_MAJOR}.${BASE_MINOR}.$((BASE_PATCH + 1))"
                 ;;
               minor)
-                TARGET_TAG="v${BASE_MAJOR}.$((BASE_MINOR + 1)).0"
+                TARGET_TAG="${TAG_PREFIX}${BASE_MAJOR}.$((BASE_MINOR + 1)).0"
                 ;;
               major)
-                TARGET_TAG="v$((BASE_MAJOR + 1)).0.0"
+                TARGET_TAG="${TAG_PREFIX}$((BASE_MAJOR + 1)).0.0"
                 ;;
               *)
                 echo "Unsupported release_strategy: $RELEASE_STRATEGY"
@@ -196,14 +265,13 @@ jobs:
 
           echo "target_tag=${TARGET_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Download source release assets
-        uses: robinraju/release-downloader@v1.12
+      - name: Download build artifacts from source run
+        uses: actions/download-artifact@v4
         with:
-          repository: ${{ github.repository }}
-          tag: ${{ steps.source.outputs.source_tag }}
-          fileName: '*'
-          out-file-path: promote-assets
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ env.ARTIFACT_NAME }}
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: promote-assets
 
       - name: Show downloaded assets
         run: |
@@ -211,7 +279,7 @@ jobs:
           ls -lh promote-assets
           COUNT=$(find promote-assets -maxdepth 1 -type f | wc -l)
           if [[ "$COUNT" -eq 0 ]]; then
-            echo "No files were downloaded from source prerelease assets."
+            echo "No files were downloaded from source run artifacts."
             exit 1
           fi
 
@@ -219,9 +287,10 @@ jobs:
         run: |
           {
             echo "## Promotion Summary"
-            echo "- Source prerelease tag: ${{ steps.source.outputs.source_tag }}"
-            echo "- Source release name: ${{ steps.source.outputs.source_name }}"
-            echo "- Source asset count: ${{ steps.source.outputs.asset_count }}"
+            echo "- Image type: ${IMAGE_TYPE}"
+            echo "- Source CI tag: ${{ steps.source.outputs.source_tag }}"
+            echo "- Source build run: ${{ steps.source.outputs.source_name }} (run_id: ${{ steps.source.outputs.run_id }})"
+            echo "- Artifact name: ${ARTIFACT_NAME}"
             echo "- Version strategy: ${RELEASE_STRATEGY}"
             echo "- Target tag: ${{ steps.target.outputs.target_tag }}"
             echo "- Target channel: ${RELEASE_CHANNEL}"
@@ -266,7 +335,7 @@ jobs:
           fi
           [[ -z "$COMMIT" ]] && COMMIT="${GITHUB_SHA}"
           SHORT_SHA="${COMMIT::7}"
-          [[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="core-image-medtech-qemuarm64"
+          [[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="${IMAGE_TYPE}-qemuarm64"
           echo "commit=${COMMIT}"       >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE_NAME}"    >> "$GITHUB_OUTPUT"
@@ -298,8 +367,10 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.target.outputs.target_tag }}
+          name: "${{ github.event.inputs.image_type }} ${{ steps.target.outputs.target_tag }}"
           files: promote-assets/*
           body_path: ${{ steps.render_notes.outputs.notes_path }}
           prerelease: ${{ steps.channel.outputs.prerelease }}
+          make_latest: false
           draft: false
           generate_release_notes: false
