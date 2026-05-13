@@ -57,6 +57,9 @@ runs:
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
         if [[ -n "$PUSH_TOKEN" ]]; then
+          # actions/checkout persists GITHUB_TOKEN in http extraheaders by default.
+          # Remove those headers so the explicit push_token is actually used.
+          git config --local --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
         fi
 
