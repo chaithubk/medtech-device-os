@@ -8,6 +8,8 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - '.github/actions/**'
+      - '.github/workflows/**'
+      - '.github/actions/*'
   push:
     branches: [ main ]
     paths:
@@ -15,6 +17,7 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - '.github/actions/**'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       spdx_enabled:
