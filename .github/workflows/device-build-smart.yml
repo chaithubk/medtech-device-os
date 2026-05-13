@@ -293,9 +293,11 @@ jobs:
           cp ../conf/local.conf.sample conf/local.conf
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
-          echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\"" >> conf/local.conf
-          echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\"" >> conf/local.conf
-          echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\"" >> conf/local.conf
+          {
+            echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\""
+            echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\""
+            echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\""
+          } >> conf/local.conf
           echo "Optional features: SPDX=${SPDX_ENABLED} Vigiles=${VIGILES_ENABLED} buildhistory=${BUILDHISTORY_ENABLED}"
 
           echo "# GitHub-hosted runners do not persist build cache between jobs" >> conf/local.conf
@@ -535,7 +537,7 @@ jobs:
             find tmp/work -type f -path "*/${FAILED_PN}/*/temp/log.do_*" -exec cp --parents {} ../../artifacts-debug/ \; 2>/dev/null || true
             find tmp/work -type f -path "*/${FAILED_PN}/*/temp/run.do_*" -exec cp --parents {} ../../artifacts-debug/ \; 2>/dev/null || true
             find tmp/work -type f -path "*/${FAILED_PN}/*/build/config.log" -exec cp --parents {} ../../artifacts-debug/ \; 2>/dev/null || true
-            bitbake -e "$FAILED_PN" > ../../artifacts-debug/bitbake-env-${FAILED_PN}.txt 2>/dev/null || true
+            bitbake -e "$FAILED_PN" > "../../artifacts-debug/bitbake-env-${FAILED_PN}.txt" 2>/dev/null || true
           fi
 
           cd ../..

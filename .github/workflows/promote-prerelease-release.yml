@@ -332,7 +332,7 @@ jobs:
           echo "notes_path=${OUTPUT}" >> "$GITHUB_OUTPUT"
 
       - name: Create release from promoted assets
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.target.outputs.target_tag }}
           name: "${{ github.event.inputs.image_type }} ${{ steps.target.outputs.target_tag }}"

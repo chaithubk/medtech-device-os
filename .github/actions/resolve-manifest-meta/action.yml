@@ -27,28 +27,23 @@ runs:
         IMAGE_NAME=""
         SSH_MODE="public-hardened"
         if [[ -n "$MANIFEST" ]]; then
-          mapfile -t META_FIELDS < <(python3 - "$MANIFEST" <<'PY'
-import json
-import sys
-
-manifest_path = sys.argv[1]
-commit = ""
-image = ""
-ssh_mode = "public-hardened"
-
-try:
-    with open(manifest_path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    commit = data.get("commit") or data.get("build_commit") or ""
-    image = data.get("image") or ""
-    ssh_mode = data.get("ssh_mode") or "public-hardened"
-except Exception:
-    pass
-
-print(commit)
-print(image)
-print(ssh_mode)
-PY
+          mapfile -t META_FIELDS < <(
+          python3 -c 'import json,sys
+    manifest_path=sys.argv[1]
+    commit=""
+    image=""
+    ssh_mode="public-hardened"
+    try:
+      with open(manifest_path, "r", encoding="utf-8") as fh:
+        data=json.load(fh)
+      commit=data.get("commit") or data.get("build_commit") or ""
+      image=data.get("image") or ""
+      ssh_mode=data.get("ssh_mode") or "public-hardened"
+    except Exception:
+      pass
+    print(commit)
+    print(image)
+    print(ssh_mode)' "$MANIFEST"
           )
           COMMIT="${META_FIELDS[0]:-}"
           IMAGE_NAME="${META_FIELDS[1]:-}"
