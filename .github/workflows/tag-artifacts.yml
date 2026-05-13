@@ -52,10 +52,12 @@ jobs:
             echo "Proceeding anyway, but verify this was a successful build."
           fi
           
-          echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
-          echo "commit_msg=$COMMIT_MSG" >> "$GITHUB_OUTPUT"
-          echo "workflow_name=$WORKFLOW_NAME" >> "$GITHUB_OUTPUT"
-          echo "run_status=$RUN_STATUS" >> "$GITHUB_OUTPUT"
+          {
+            echo "target_sha=$TARGET_SHA"
+            echo "commit_msg=$COMMIT_MSG"
+            echo "workflow_name=$WORKFLOW_NAME"
+            echo "run_status=$RUN_STATUS"
+          } >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -63,8 +65,7 @@ jobs:
         run: |
           TARGET_SHA="${{ steps.extract.outputs.target_sha }}"
           
-          git cat-file -t "$TARGET_SHA" > /dev/null 2>&1
-          if [ $? -ne 0 ]; then
+          if ! git cat-file -t "$TARGET_SHA" > /dev/null 2>&1; then
             echo "ERROR: Target SHA $TARGET_SHA not found in repository"
             exit 1
           fi
