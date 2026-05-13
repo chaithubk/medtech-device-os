@@ -52,6 +52,14 @@ env:
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
+  lint-workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint all workflows with actionlint
+        uses: ./.github/actions/lint-workflows
+
   build-minimal:
     name: Build core-image-minimal
     runs-on: ubuntu-22.04

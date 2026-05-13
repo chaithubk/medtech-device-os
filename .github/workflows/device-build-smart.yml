@@ -133,37 +133,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate workflow and composite action YAML
-        run: |
-          pip install --quiet pyyaml
-          python3 - <<'PYEOF'
-          import glob
-          import sys
-          import yaml
-
-          files = sorted(set(
-              glob.glob('.github/workflows/*.yml') +
-              glob.glob('.github/workflows/*.yaml') +
-              glob.glob('.github/actions/*/action.yml') +
-              glob.glob('.github/actions/*/action.yaml')
-          ))
-
-          errors = []
-          for path in files:
-              try:
-                  with open(path, encoding='utf-8') as fh:
-                      yaml.safe_load(fh)
-                  print(f"OK  {path}")
-              except yaml.YAMLError as exc:
-                  print(f"ERR {path}: {exc}")
-                  errors.append(path)
-
-          if errors:
-              print(f"\n{len(errors)} file(s) failed YAML validation.")
-              sys.exit(1)
-
-          print(f"\nAll {len(files)} YAML file(s) are valid.")
-          PYEOF
+      - name: Lint all workflows with actionlint
+        uses: ./.github/actions/lint-workflows
 
       - name: Validate bash script syntax
         run: |
@@ -190,30 +161,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate workflow YAML files
-        run: |
-          pip install --quiet pyyaml
-          python3 - <<'PYEOF'
-          import yaml, sys, glob
-
-          errors = []
-          for path in sorted(
-              glob.glob(".github/workflows/*.yml") +
-              glob.glob(".github/workflows/*.yaml")
-          ):
-              try:
-                  with open(path) as fh:
-                      yaml.safe_load(fh)
-                  print(f"OK  {path}")
-              except yaml.YAMLError as exc:
-                  print(f"ERR {path}: {exc}")
-                  errors.append(path)
-
-          if errors:
-              print(f"\n{len(errors)} file(s) failed YAML validation.")
-              sys.exit(1)
-          print("\nAll workflow files are valid YAML.")
-          PYEOF
+      - name: Lint all workflows with actionlint
+        uses: ./.github/actions/lint-workflows
 
   # ── 2c. Full image build path ─────────────────────────────────────────────
   # Hard-fail triggers (build must succeed or job fails):

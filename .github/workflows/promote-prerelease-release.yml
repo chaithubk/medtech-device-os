@@ -93,6 +93,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  lint-workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint all workflows with actionlint
+        uses: ./.github/actions/lint-workflows
   promote:
     name: Promote Existing Release Assets
     runs-on: ubuntu-22.04
@@ -298,48 +305,9 @@ jobs:
 
       - name: Resolve source commit from manifest
         id: source_meta
-        run: |
-          set -euo pipefail
-          MANIFEST=$(find promote-assets -maxdepth 1 -name '*-manifest.json' | head -1 || true)
-          COMMIT=""
-          SHORT_SHA=""
-          IMAGE_NAME=""
-          SSH_MODE="public-hardened"
-          if [[ -n "$MANIFEST" ]]; then
-            mapfile -t META_FIELDS < <(python3 - "$MANIFEST" <<'PY'
-              import json
-              import sys
-
-              manifest_path = sys.argv[1]
-              commit = ""
-              image = ""
-              ssh_mode = "public-hardened"
-
-              try:
-                with open(manifest_path, "r", encoding="utf-8") as fh:
-                  data = json.load(fh)
-                commit = data.get("commit") or data.get("build_commit") or ""
-                image = data.get("image") or ""
-                ssh_mode = data.get("ssh_mode") or "public-hardened"
-              except Exception:
-                pass
-
-              print(commit)
-              print(image)
-              print(ssh_mode)
-              PY
-            )
-            COMMIT="${META_FIELDS[0]:-}"
-            IMAGE_NAME="${META_FIELDS[1]:-}"
-            SSH_MODE="${META_FIELDS[2]:-public-hardened}"
-          fi
-          [[ -z "$COMMIT" ]] && COMMIT="${GITHUB_SHA}"
-          SHORT_SHA="${COMMIT::7}"
-          [[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="${IMAGE_TYPE}-qemuarm64"
-          echo "commit=${COMMIT}"       >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "image=${IMAGE_NAME}"    >> "$GITHUB_OUTPUT"
-          echo "ssh_mode=${SSH_MODE}"   >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-manifest-meta
+        with:
+          manifest_dir: promote-assets
 
       - name: Render stable release notes
         id: render_notes
