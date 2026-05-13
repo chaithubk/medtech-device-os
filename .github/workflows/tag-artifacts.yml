@@ -30,14 +30,13 @@ jobs:
           
           echo "=== FETCHING RUN #$RUN_ID DETAILS ==="
           
-          # Get run details: commit SHA, message, workflow name
+          # Get run details: commit SHA and workflow name
           RUN_JSON=$(gh run view "$RUN_ID" \
             --repo "${{ github.repository }}" \
-            --json headCommit,workflowName,status,conclusion,number)
+            --json headSha,workflowName,status,conclusion,number)
           
           # Extract values
-          TARGET_SHA=$(echo "$RUN_JSON" | jq -r '.headCommit.oid')
-          COMMIT_MSG=$(echo "$RUN_JSON" | jq -r '.headCommit.message')
+          TARGET_SHA=$(echo "$RUN_JSON" | jq -r '.headSha')
           WORKFLOW_NAME=$(echo "$RUN_JSON" | jq -r '.workflowName')
           RUN_STATUS=$(echo "$RUN_JSON" | jq -r '.status')
           RUN_CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
@@ -54,7 +53,6 @@ jobs:
           
           {
             echo "target_sha=$TARGET_SHA"
-            echo "commit_msg=$COMMIT_MSG"
             echo "workflow_name=$WORKFLOW_NAME"
             echo "run_status=$RUN_STATUS"
           } >> "$GITHUB_OUTPUT"
