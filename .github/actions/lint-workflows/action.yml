@@ -1,0 +1,22 @@
+name: Lint Workflows
+description: Install and run actionlint against repository workflows.
+inputs:
+  actionlint_version:
+    description: actionlint version to install
+    required: false
+    default: "1.7.7"
+runs:
+  using: composite
+  steps:
+    - name: Install actionlint
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="${{ inputs.actionlint_version }}"
+        curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz" \
+          | tar -xz -C /tmp actionlint
+        echo "/tmp" >> "$GITHUB_PATH"
+
+    - name: Run actionlint
+      shell: bash
+      run: actionlint -color

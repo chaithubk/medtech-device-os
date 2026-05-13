@@ -1,0 +1,43 @@
+name: 'Resolve Manifest Meta'
+description: 'Extract commit, image, and ssh_mode from a manifest JSON file.'
+inputs:
+  manifest_dir:
+    description: 'Directory to search for *-manifest.json'
+    required: true
+    default: 'promote-assets'
+outputs:
+  commit:
+    description: 'Commit SHA from manifest or GITHUB_SHA'
+  short_sha:
+    description: 'Short SHA (first 7 chars)'
+  image:
+    description: 'Image name from manifest or fallback'
+  ssh_mode:
+    description: 'SSH mode from manifest or fallback'
+runs:
+  using: 'composite'
+  steps:
+    - id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        MANIFEST=$(find "${{ inputs.manifest_dir }}" -maxdepth 1 -name '*-manifest.json' | head -1 || true)
+        COMMIT=""
+        SHORT_SHA=""
+        IMAGE_NAME=""
+        SSH_MODE="public-hardened"
+        if [[ -n "$MANIFEST" ]]; then
+          mapfile -t META_FIELDS < <(
+          python3 "${{ github.action_path }}/resolve_manifest_meta.py" "$MANIFEST"
+          )
+          COMMIT="${META_FIELDS[0]:-}"
+          IMAGE_NAME="${META_FIELDS[1]:-}"
+          SSH_MODE="${META_FIELDS[2]:-public-hardened}"
+        fi
+        [[ -z "$COMMIT" ]] && COMMIT="${GITHUB_SHA}"
+        SHORT_SHA="${COMMIT::7}"
+        [[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="${{ github.event.inputs.image_type || 'unknown-image' }}-qemuarm64"
+        echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+        echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+        echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+        echo "ssh_mode=$SSH_MODE" >> "$GITHUB_OUTPUT"

@@ -52,6 +52,14 @@ env:
   GIT_TERMINAL_PROMPT: "0"
 
 jobs:
+  lint-workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint all workflows with actionlint
+        uses: ./.github/actions/lint-workflows
+
   build-minimal:
     name: Build core-image-minimal
     runs-on: ubuntu-22.04
@@ -172,9 +180,11 @@ jobs:
           cp ../conf/local.conf.sample conf/local.conf
           cp ../conf/bblayers.conf.sample conf/bblayers.conf
 
-          echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\"" >> conf/local.conf
-          echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\"" >> conf/local.conf
-          echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\"" >> conf/local.conf
+          {
+            echo "MEDTECH_ENABLE_SPDX = \"${SPDX_ENABLED}\""
+            echo "MEDTECH_ENABLE_VIGILES = \"${VIGILES_ENABLED}\""
+            echo "MEDTECH_ENABLE_BUILDHISTORY = \"${BUILDHISTORY_ENABLED}\""
+          } >> conf/local.conf
           echo "Optional features: SPDX=${SPDX_ENABLED} Vigiles=${VIGILES_ENABLED} buildhistory=${BUILDHISTORY_ENABLED}"
 
           if [[ -n "${VIGILES_KEY_FILE:-}" ]]; then
@@ -193,9 +203,11 @@ jobs:
           } >> conf/local.conf
 
           if [[ -n "${{ github.event.inputs.extra_local_conf }}" ]]; then
-            echo "" >> conf/local.conf
-            echo "# User-provided local.conf overrides" >> conf/local.conf
-            printf '%s\n' "${{ github.event.inputs.extra_local_conf }}" >> conf/local.conf
+            {
+              echo ""
+              echo "# User-provided local.conf overrides"
+              printf '%s\n' "${{ github.event.inputs.extra_local_conf }}"
+            } >> conf/local.conf
           fi
 
           echo "Build directory initialized"

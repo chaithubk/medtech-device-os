@@ -54,6 +54,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  lint-workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint all workflows with actionlint
+        uses: ./.github/actions/lint-workflows
+
   mark-stable:
     name: Mark Release as Stable
     runs-on: ubuntu-22.04
