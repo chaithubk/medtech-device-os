@@ -266,8 +266,12 @@ jobs:
           fi
 
           if git rev-parse -q --verify "refs/tags/${TARGET_TAG}" >/dev/null; then
-            echo "Target tag already exists: ${TARGET_TAG}"
-            exit 1
+            if [[ "${RELEASE_CHANNEL}" == "prerelease" ]]; then
+              echo "Target tag already exists and prerelease channel is selected; reusing tag: ${TARGET_TAG}"
+            else
+              echo "Target tag already exists: ${TARGET_TAG}"
+              exit 1
+            fi
           fi
 
           echo "target_tag=${TARGET_TAG}" >> "$GITHUB_OUTPUT"
@@ -309,6 +313,30 @@ jobs:
         with:
           manifest_dir: promote-assets
 
+      - name: Validate stable release notes template
+        run: |
+          set -euo pipefail
+          TEMPLATE=".github/release-notes/stable-release.md"
+
+          REQUIRED_TOKENS=(
+            "{{IMAGE}}"
+            "{{TARGET_TAG}}"
+            "{{CHANNEL}}"
+            "{{SHORT_SHA}}"
+            "{{COMMIT}}"
+            "{{SSH_MODE}}"
+            "{{REPO_URL}}"
+          )
+
+          for token in "${REQUIRED_TOKENS[@]}"; do
+            if ! grep -Fq "${token}" "${TEMPLATE}"; then
+              echo "Template validation failed: missing token ${token} in ${TEMPLATE}"
+              exit 1
+            fi
+          done
+
+          echo "Template validation passed for ${TEMPLATE}."
+
       - name: Render stable release notes
         id: render_notes
         run: |
@@ -318,18 +346,59 @@ jobs:
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           REPO_SLUG="${GITHUB_REPOSITORY}"
 
+          TARGET_TAG="${{ steps.target.outputs.target_tag }}"
+          SOURCE_TAG="${{ steps.source.outputs.source_tag }}"
+          CHANNEL="${RELEASE_CHANNEL}"
+          IMAGE="${{ steps.source_meta.outputs.image }}"
+          COMMIT="${{ steps.source_meta.outputs.commit }}"
+          SHORT_SHA="${{ steps.source_meta.outputs.short_sha }}"
+          SSH_MODE="${{ steps.source_meta.outputs.ssh_mode }}"
+
+          for value_name in TARGET_TAG CHANNEL IMAGE COMMIT SHORT_SHA SSH_MODE REPO_URL; do
+            if [[ -z "${!value_name}" ]]; then
+              echo "Release note render input is empty: ${value_name}"
+              exit 1
+            fi
+          done
+
+          if [[ ! "${COMMIT}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            echo "Release note render input COMMIT is not a valid git SHA: ${COMMIT}"
+            exit 1
+          fi
+
           sed \
-            -e "s|{{TARGET_TAG}}|${{ steps.target.outputs.target_tag }}|g" \
-            -e "s|{{SOURCE_TAG}}|${{ steps.source.outputs.source_tag }}|g" \
-            -e "s|{{IMAGE}}|${{ steps.source_meta.outputs.image }}|g" \
-            -e "s|{{COMMIT}}|${{ steps.source_meta.outputs.commit }}|g" \
-            -e "s|{{SHORT_SHA}}|${{ steps.source_meta.outputs.short_sha }}|g" \
-            -e "s|{{SSH_MODE}}|${{ steps.source_meta.outputs.ssh_mode }}|g" \
+            -e "s|{{TARGET_TAG}}|${TARGET_TAG}|g" \
+            -e "s|{{SOURCE_TAG}}|${SOURCE_TAG}|g" \
+            -e "s|{{CHANNEL}}|${CHANNEL}|g" \
+            -e "s|{{IMAGE}}|${IMAGE}|g" \
+            -e "s|{{COMMIT}}|${COMMIT}|g" \
+            -e "s|{{SHORT_SHA}}|${SHORT_SHA}|g" \
+            -e "s|{{SSH_MODE}}|${SSH_MODE}|g" \
             -e "s|{{REPO_URL}}|${REPO_URL}|g" \
             -e "s|{{REPO_SLUG}}|${REPO_SLUG}|g" \
             "$TEMPLATE" > "$OUTPUT"
 
           echo "notes_path=${OUTPUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate rendered release notes
+        run: |
+          set -euo pipefail
+          NOTES_FILE="${{ steps.render_notes.outputs.notes_path }}"
+          EMPTY_FIELDS_PATTERN="^## MedTech Device OS — \`\`\$|^\\| Version \\| \`\` \\|\$|^\\| Channel \\| \`\` \\|\$|^\\| SSH mode \\| \`\` \\|\$|^\\| Commit \\| \\[\`\\\`\\\`\\]\([^)]*/commit/?\\) \\|\$"
+
+          if grep -Eq "\{\{[A-Za-z0-9_]+\}\}" "$NOTES_FILE"; then
+            echo "Unresolved template placeholders found in $NOTES_FILE:"
+            grep -En "\{\{[A-Za-z0-9_]+\}\}" "$NOTES_FILE" || true
+            exit 1
+          fi
+
+          if grep -Eq "$EMPTY_FIELDS_PATTERN" "$NOTES_FILE"; then
+            echo "Rendered release notes contain empty critical fields in $NOTES_FILE:"
+            grep -En "$EMPTY_FIELDS_PATTERN" "$NOTES_FILE" || true
+            exit 1
+          fi
+
+          echo "Rendered release notes validation passed."
 
       - name: Create release from promoted assets
         uses: softprops/action-gh-release@v2

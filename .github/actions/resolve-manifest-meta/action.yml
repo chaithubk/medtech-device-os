@@ -8,12 +8,16 @@ inputs:
 outputs:
   commit:
     description: 'Commit SHA from manifest or GITHUB_SHA'
+    value: ${{ steps.resolve.outputs.commit }}
   short_sha:
     description: 'Short SHA (first 7 chars)'
+    value: ${{ steps.resolve.outputs.short_sha }}
   image:
     description: 'Image name from manifest or fallback'
+    value: ${{ steps.resolve.outputs.image }}
   ssh_mode:
     description: 'SSH mode from manifest or fallback'
+    value: ${{ steps.resolve.outputs.ssh_mode }}
 runs:
   using: 'composite'
   steps:

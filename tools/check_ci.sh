@@ -10,7 +10,13 @@ if ! command -v actionlint >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v shellcheck >/dev/null 2>&1; then
+  echo "error: shellcheck is not installed or not on PATH" >&2
+  echo "hint: install shellcheck locally so actionlint can lint workflow run scripts" >&2
+  exit 1
+fi
+
 echo "==> Running actionlint"
-actionlint -color
+actionlint -color -shellcheck "$(command -v shellcheck)"
 
 echo "CI workflow lint checks passed."
