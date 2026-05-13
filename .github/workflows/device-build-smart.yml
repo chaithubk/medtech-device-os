@@ -8,6 +8,8 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - '.github/actions/**'
+      - '.github/workflows/**'
+      - '.github/actions/*'
   push:
     branches: [ main ]
     paths:
@@ -15,6 +17,7 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - '.github/actions/**'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       spdx_enabled:
@@ -761,11 +764,11 @@ jobs:
         uses: ./.github/actions/compute-ci-tag
         if: success()
         with:
-          push_prefix: dev-main
-          non_push_prefix: ${{ github.event_name == 'pull_request' && format('dev-pr-{0}', github.event.pull_request.number) || 'dev-manual' }}
+          push_prefix: dev-core-image-medtech-main
+          non_push_prefix: ${{ github.event_name == 'pull_request' && format('dev-core-image-medtech-pr-{0}', github.event.pull_request.number) || 'dev-core-image-medtech-manual' }}
       - name: Create and push CI tag
         continue-on-error: true
-        if: success() && github.event_name == 'push'
+        if: success() && github.event_name != 'pull_request'
         uses: ./.github/actions/create-git-tag
         with:
           tag_name: ${{ steps.ci_tag.outputs.tag }}

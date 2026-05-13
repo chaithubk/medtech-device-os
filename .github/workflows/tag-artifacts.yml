@@ -1,0 +1,145 @@
+name: Tag Artifacts (Auto Extract)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Build run ID to tag (e.g., 138). Will auto-extract commit SHA and compute tag name."
+        required: true
+        type: string
+
+env:
+  GIT_TERMINAL_PROMPT: "0"
+
+jobs:
+  extract-and-tag:
+    name: Extract Run Info and Create Tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch run details and extract commit SHA
+        id: extract
+        run: |
+          RUN_ID="${{ github.event.inputs.run_id }}"
+          
+          echo "=== FETCHING RUN #$RUN_ID DETAILS ==="
+          
+          # Get run details: commit SHA, message, workflow name
+          RUN_JSON=$(gh run view "$RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --json headCommit,workflowName,status,conclusion,number)
+          
+          # Extract values
+          TARGET_SHA=$(echo "$RUN_JSON" | jq -r '.headCommit.oid')
+          COMMIT_MSG=$(echo "$RUN_JSON" | jq -r '.headCommit.message')
+          WORKFLOW_NAME=$(echo "$RUN_JSON" | jq -r '.workflowName')
+          RUN_STATUS=$(echo "$RUN_JSON" | jq -r '.status')
+          RUN_CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+          
+          if [[ -z "$TARGET_SHA" || "$TARGET_SHA" == "null" ]]; then
+            echo "ERROR: Could not extract commit SHA from run $RUN_ID"
+            exit 1
+          fi
+          
+          if [[ "$RUN_CONCLUSION" != "success" ]]; then
+            echo "WARNING: Run #$RUN_ID conclusion is: $RUN_CONCLUSION (expected: success)"
+            echo "Proceeding anyway, but verify this was a successful build."
+          fi
+          
+          {
+            echo "target_sha=$TARGET_SHA"
+            echo "commit_msg=$COMMIT_MSG"
+            echo "workflow_name=$WORKFLOW_NAME"
+            echo "run_status=$RUN_STATUS"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify commit exists in repository
+        run: |
+          TARGET_SHA="${{ steps.extract.outputs.target_sha }}"
+          
+          if ! git cat-file -t "$TARGET_SHA" > /dev/null 2>&1; then
+            echo "ERROR: Target SHA $TARGET_SHA not found in repository"
+            exit 1
+          fi
+          echo "✓ Commit verified in repository"
+
+      - name: Display commit info for confirmation
+        run: |
+          echo "=== COMMIT TO BE TAGGED ==="
+          echo ""
+          echo "Run ID: ${{ github.event.inputs.run_id }}"
+          echo "Workflow: ${{ steps.extract.outputs.workflow_name }}"
+          echo ""
+          echo "Commit:"
+          git log -1 --format="%h %s" ${{ steps.extract.outputs.target_sha }}
+          echo ""
+          echo "Author: $(git log -1 --format='%an <%ae>' ${{ steps.extract.outputs.target_sha }})"
+          echo "Date: $(git log -1 --format='%ai' ${{ steps.extract.outputs.target_sha }})"
+          echo ""
+          echo "Message:"
+          git log -1 --format=%B ${{ steps.extract.outputs.target_sha }} | head -n 20
+          echo ""
+
+      - name: Compute tag name from workflow and commit
+        id: compute_tag
+        run: |
+          WORKFLOW="${{ steps.extract.outputs.workflow_name }}"
+          SHA="${{ steps.extract.outputs.target_sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          DATE=$(date -u +%Y-%m-%d)
+          
+          # Determine image name and prefix from workflow name
+          if [[ "$WORKFLOW" == *"Minimal"* || "$WORKFLOW" == *"minimal"* ]]; then
+            PREFIX="dev-core-image-minimal"
+          elif [[ "$WORKFLOW" == *"Smart"* || "$WORKFLOW" == *"medtech"* ]]; then
+            PREFIX="dev-core-image-medtech"
+          else
+            PREFIX="dev-image"
+          fi
+          
+          # Compute tag: dev-core-image-medtech-manual-2026-05-13-a1b2c3d
+          TAG_NAME="${PREFIX}-manual-${DATE}-${SHORT_SHA}"
+          
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          
+          echo ""
+          echo "=== COMPUTED TAG NAME ==="
+          echo "$TAG_NAME"
+
+      - name: Final confirmation before tagging
+        run: |
+          echo "=== FINAL CONFIRMATION ==="
+          echo ""
+          echo "✓ Commit SHA verified: ${{ steps.extract.outputs.target_sha }}"
+          echo "✓ Tag to create: ${{ steps.compute_tag.outputs.tag_name }}"
+          echo "✓ Workflow: ${{ steps.extract.outputs.workflow_name }}"
+          echo ""
+          echo "Proceeding with tag creation..."
+          echo ""
+
+      - name: Create and push tag
+        uses: ./.github/actions/create-git-tag
+        with:
+          tag_name: ${{ steps.compute_tag.outputs.tag_name }}
+          target_sha: ${{ steps.extract.outputs.target_sha }}
+          push_token: ${{ secrets.CI_TAG_PUSH_TOKEN }}
+
+      - name: Confirm tag created successfully
+        run: |
+          echo "=== TAG CREATION SUCCESSFUL ==="
+          echo ""
+          echo "Tag: ${{ steps.compute_tag.outputs.tag_name }}"
+          echo "Commit: ${{ steps.extract.outputs.target_sha }}"
+          echo ""
+          echo "To verify and fetch locally:"
+          echo "  git fetch origin ${{ steps.compute_tag.outputs.tag_name }}"
+          echo "  git log --oneline -1 ${{ steps.compute_tag.outputs.tag_name }}"
+          echo ""
