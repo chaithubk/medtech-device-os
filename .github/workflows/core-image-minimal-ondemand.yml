@@ -71,7 +71,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          persist-credentials: false
 
       - name: Free up disk space on GitHub runner
         run: |
