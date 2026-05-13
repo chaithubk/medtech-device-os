@@ -2,6 +2,8 @@
 
 For public-hardened release images, SSH access is not enabled by default. This guide explains how to provision your SSH public key on first boot.
 
+This flow applies to both `core-image-minimal` and `core-image-medtech` images.
+
 ---
 
 ## What Happens on First Boot

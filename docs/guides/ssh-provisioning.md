@@ -52,6 +52,32 @@ ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
 
 ---
 
+## CI Workflow Key Passing (GitHub Actions)
+
+Use the workflow input `ssh_access_mode`:
+
+1. `internal-keyed`
+- Provide repository secret `MEDTECH_ADMIN_SSH_PUBLIC_KEY` with one SSH public key line.
+- The workflow writes this key into build config (`MEDTECH_ADMIN_KEY_FILE`).
+- Result: key is baked into image, SSH works immediately, first-boot prompt is skipped.
+
+2. `public-hardened` (default)
+- Workflow explicitly sets no baked key.
+- Result: image expects first-boot interactive provisioning on serial console.
+- If you cannot use serial console, choose `internal-keyed` instead.
+
+### If You Do Not Pass a Key
+
+1. `internal-keyed` without secret:
+- Workflow fails fast with validation error (missing `MEDTECH_ADMIN_SSH_PUBLIC_KEY`).
+
+2. `public-hardened` without key:
+- Build succeeds.
+- No SSH key is baked into image.
+- SSH login is unavailable until key is provisioned at first boot over serial.
+
+---
+
 ## How It Works
 
 ```

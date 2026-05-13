@@ -10,7 +10,7 @@ MEDTECH_ADMIN_USER="medadmin"
 ADMIN_HOME="/home/${MEDTECH_ADMIN_USER}"
 SSH_DIR="${ADMIN_HOME}/.ssh"
 AUTHORIZED_KEYS="${SSH_DIR}/authorized_keys"
-PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-30}"
+PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-120}"
 
 log() {
     echo "[firstboot-ssh-setup] $*"
@@ -60,7 +60,8 @@ Step 3: Copy the ENTIRE output from Step 2 and paste it below.
 Press Enter when ready to paste your SSH public key:
 EOF
     if ! read -r -t "$PROMPT_TIMEOUT_SECONDS"; then
-        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s; skipping first-boot key prompt"
+        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s; skipping for now (service will retry on next boot until key is provisioned)"
+        log "SSH remains key-only and no key is installed yet. If serial console is unavailable, rebuild with ssh_access_mode=internal-keyed and provide MEDTECH_ADMIN_SSH_PUBLIC_KEY in workflow secrets."
         return 1
     fi
 }
