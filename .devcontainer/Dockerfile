@@ -2,6 +2,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ARG ACTIONLINT_VERSION=1.7.7
 
 # Install essential tools first
 RUN apt-get update && apt-get install -y \
@@ -83,6 +84,12 @@ RUN pip3 install \
     requests \
     jinja2 \
     pytest
+
+# Install actionlint for local GitHub Actions validation.
+RUN curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+    | tar -xz -C /tmp actionlint \
+    && install -m 0755 /tmp/actionlint /usr/local/bin/actionlint \
+    && rm -f /tmp/actionlint
 
 # Create workspace
 WORKDIR /workspace
