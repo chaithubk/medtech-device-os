@@ -142,18 +142,21 @@ jobs:
               }
             } else {
               // Auto-select: prefer dev-* tags that contain the image type name
+              // and follow the run suffix contract ...-r<N>.<attempt>.
               const devTags = allTags.filter(t =>
                 t.name.startsWith('dev-') &&
                 (imageType ? t.name.includes(imageType) : true)
               );
-              if (devTags.length === 0) {
+              const compatibleDevTags = devTags.filter(t => /-r\d+\.\d+$/.test(t.name));
+              if (compatibleDevTags.length === 0) {
                 core.setFailed(
-                  `No dev-* CI tags found${imageType ? ` matching image type '${imageType}'` : ''}. ` +
+                  `No compatible dev-* CI tags found${imageType ? ` matching image type '${imageType}'` : ''}. ` +
+                  `Expected tag format ending in -r<N>.<attempt>. ` +
                   `Run a build workflow first, or specify source_tag explicitly.`
                 );
                 return;
               }
-              selectedTag = devTags[0];
+              selectedTag = compatibleDevTags[0];
             }
 
             const tagName = selectedTag.name;
