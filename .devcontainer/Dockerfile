@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y \
     lsof \
     ripgrep \
     jq \
+    shellcheck \
     tree \
     less \
     xterm \

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Version | `{{TARGET_TAG}}` |
-| Channel | stable |
+| Channel | `{{CHANNEL}}` |
 | Commit | [`{{SHORT_SHA}}`]({{REPO_URL}}/commit/{{COMMIT}}) |
 | SSH mode | `{{SSH_MODE}}` |
 
