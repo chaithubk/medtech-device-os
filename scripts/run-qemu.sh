@@ -10,6 +10,8 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 YOCTO_ROOT="$PROJECT_ROOT/yocto"
 BUILD_DIR="$YOCTO_ROOT/build"
 DEPLOY_DIR="$BUILD_DIR/tmp/deploy/images/qemuarm64"
+EXTRACTED_IMAGE_DIR="$PROJECT_ROOT/qemu-release/extracted/payload/image"
+ARTIFACTS_DIR="$PROJECT_ROOT/artifacts"
 
 echo "=== MedTech Device OS - QEMU Runner ==="
 
@@ -48,16 +50,86 @@ if ! command -v qemu-system-aarch64 &> /dev/null; then
     exit 1
 fi
 
-pick_latest() {
-    local pattern="$1"
+pick_latest_in_dir() {
+    local dir="$1"
+    local pattern="$2"
 
-    find -L "$DEPLOY_DIR" -maxdepth 1 \( -type f -o -type l \) -name "$pattern" -printf '%T@ %p\n' 2>/dev/null \
+    find -L "$dir" -maxdepth 1 \( -type f -o -type l \) -name "$pattern" -printf '%T@ %p\n' 2>/dev/null \
         | sort -nr \
         | head -n 1 \
         | cut -d' ' -f2-
 }
 
-KERNEL="$DEPLOY_DIR/Image-qemuarm64.bin"
+pick_latest() {
+    local pattern="$1"
+
+    pick_latest_in_dir "$IMAGE_DIR" "$pattern"
+}
+
+extract_bundle_if_needed() {
+    local bundle=""
+
+    if [ -d "$EXTRACTED_IMAGE_DIR" ]; then
+        if [ -n "$(pick_latest_in_dir "$EXTRACTED_IMAGE_DIR" 'Image*' || true)" ] && [ -n "$(pick_latest_in_dir "$EXTRACTED_IMAGE_DIR" '*.ext4' || true)" ]; then
+            return 0
+        fi
+    fi
+
+    bundle="$(find "$ARTIFACTS_DIR" -maxdepth 1 -type f -name '*qemuarm64-bundle.tar.gz' | head -n 1 2>/dev/null || true)"
+    if [ -z "$bundle" ]; then
+        return 1
+    fi
+
+    echo "Extracted artifact payload missing or incomplete."
+    echo "Extracting bundle: $bundle"
+    mkdir -p "$PROJECT_ROOT/qemu-release/extracted"
+    tar -xzf "$bundle" -C "$PROJECT_ROOT/qemu-release/extracted"
+}
+
+resolve_image_dir() {
+    if [ -d "$DEPLOY_DIR" ]; then
+        if [ -n "$(pick_latest_in_dir "$DEPLOY_DIR" 'Image*' || true)" ] && [ -n "$(pick_latest_in_dir "$DEPLOY_DIR" '*.ext4' || true)" ]; then
+            IMAGE_DIR="$DEPLOY_DIR"
+            IMAGE_SOURCE="local build output"
+            return 0
+        fi
+    fi
+
+    if [ -d "$EXTRACTED_IMAGE_DIR" ]; then
+        if [ -n "$(pick_latest_in_dir "$EXTRACTED_IMAGE_DIR" 'Image*' || true)" ] && [ -n "$(pick_latest_in_dir "$EXTRACTED_IMAGE_DIR" '*.ext4' || true)" ]; then
+            IMAGE_DIR="$EXTRACTED_IMAGE_DIR"
+            IMAGE_SOURCE="extracted artifact payload"
+            return 0
+        fi
+    fi
+
+    if extract_bundle_if_needed; then
+        if [ -n "$(pick_latest_in_dir "$EXTRACTED_IMAGE_DIR" 'Image*' || true)" ] && [ -n "$(pick_latest_in_dir "$EXTRACTED_IMAGE_DIR" '*.ext4' || true)" ]; then
+            IMAGE_DIR="$EXTRACTED_IMAGE_DIR"
+            IMAGE_SOURCE="artifact bundle (auto-extracted)"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+IMAGE_DIR=""
+IMAGE_SOURCE=""
+
+if ! resolve_image_dir; then
+    echo "❌ No bootable image source found"
+    echo "Checked local build output: $DEPLOY_DIR"
+    echo "Checked extracted artifacts: $EXTRACTED_IMAGE_DIR"
+    echo "Checked bundle tarball in: $ARTIFACTS_DIR"
+    echo "Try: bash scripts/download-and-run-qemu.sh"
+    exit 1
+fi
+
+echo "Image source: $IMAGE_SOURCE"
+echo "Image dir   : $IMAGE_DIR"
+
+KERNEL="$IMAGE_DIR/Image-qemuarm64.bin"
 if [[ ! -e "$KERNEL" ]]; then
     KERNEL="$(pick_latest 'Image*qemuarm64*.bin')"
 fi
@@ -68,23 +140,48 @@ if [[ -z "$KERNEL" ]]; then
     KERNEL="$(pick_latest 'Image*')"
 fi
 
-ROOTFS="$DEPLOY_DIR/${IMAGE_NAME}-qemuarm64.ext4"
+ROOTFS="$IMAGE_DIR/${IMAGE_NAME}-qemuarm64.ext4"
 if [[ ! -e "$ROOTFS" ]]; then
     ROOTFS="$(pick_latest "${IMAGE_NAME}-qemuarm64*.rootfs.ext4")"
 fi
 if [[ -z "$ROOTFS" ]]; then
     ROOTFS="$(pick_latest "${IMAGE_NAME}-qemuarm64*.ext4")"
 fi
+if [[ -z "$ROOTFS" ]]; then
+    ROOTFS="$(pick_latest '*.ext4')"
+fi
+
+if [ -n "$ROOTFS" ] && [[ "$ROOTFS" == *.wic* ]]; then
+    echo "❌ Found disk image but not ext4 rootfs: $ROOTFS"
+    echo "This runner expects an ext4 image for -drive format=raw."
+    exit 1
+fi
+
+if [ -n "$ROOTFS" ] && [ ! -f "$ROOTFS" ]; then
+    ROOTFS=""
+fi
+
+if [ -z "$ROOTFS" ] && [ "$IMAGE_DIR" = "$EXTRACTED_IMAGE_DIR" ]; then
+    echo "❌ No ext4 rootfs found in extracted payload image directory: $EXTRACTED_IMAGE_DIR"
+    echo "Re-extract the bundle or use: bash scripts/download-and-run-qemu.sh"
+    exit 1
+fi
+
+if [ -z "$ROOTFS" ]; then
+    ROOTFS="$(pick_latest "${IMAGE_NAME}-qemuarm64*.ext4")"
+fi
 
 if [ -z "$KERNEL" ] || [ ! -f "$KERNEL" ]; then
     echo "❌ Kernel not found: $KERNEL"
     echo "Build the image first: bitbake core-image-medtech"
+    echo "Or download/extract release bundle via: bash scripts/download-and-run-qemu.sh"
     exit 1
 fi
 
 if [ -z "$ROOTFS" ] || [ ! -f "$ROOTFS" ]; then
     echo "❌ Rootfs not found: $ROOTFS"
     echo "Build the image first: bitbake core-image-medtech"
+    echo "Or download/extract release bundle via: bash scripts/download-and-run-qemu.sh"
     exit 1
 fi
 
@@ -123,8 +220,8 @@ exec qemu-system-aarch64 \
     -m 256 \
     -kernel "$KERNEL" \
     -drive id=disk0,file="$ROOTFS",if=none,format=raw \
-    -device virtio-blk-pci,drive=disk0 \
-    -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:02 \
+    -device virtio-blk-pci,drive=disk0,romfile= \
+    -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:02,romfile= \
     -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
     -device qemu-xhci \
     -device usb-tablet \
