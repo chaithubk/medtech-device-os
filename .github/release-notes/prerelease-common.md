@@ -36,29 +36,17 @@ Connect now:
 
 ---
 
-## SSH Access (`{{SSH_MODE}}`)
+## SSH Access: {{SSH_MODE}}
 
-**`public-hardened`** — no key is baked in. On first boot a wizard runs on the
-console and prompts you to paste your SSH public key. Generate one if needed:
+{{SSH_LOGIN_SECTION}}
 
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/id_medtech -N ""
-cat ~/.ssh/id_medtech.pub   # paste this at the first-boot prompt
-```
+---
 
-Log in after provisioning:
+## Security
 
-```bash
-ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
-```
-
-**`internal-keyed`** — use the private key matching the baked-in public key:
-
-```bash
-ssh -i <matching-private-key> -p 2222 medadmin@localhost
-```
-
-> Password login and root login are disabled on all builds.
+- Password login is **disabled**
+- Root login is **disabled**
+- Only SSH key-based authentication is allowed
 
 ---
 

@@ -328,6 +328,7 @@ jobs:
             "{{SHORT_SHA}}"
             "{{COMMIT}}"
             "{{SSH_MODE}}"
+            "{{SSH_LOGIN_SECTION}}"
             "{{REPO_URL}}"
           )
 
@@ -369,6 +370,17 @@ jobs:
             exit 1
           fi
 
+          # Load SSH login content from mode-specific markdown file
+          SSH_LOGIN_FILE=".github/release-notes/ssh-login-${SSH_MODE}.md"
+          if [[ ! -f "$SSH_LOGIN_FILE" ]]; then
+            echo "ERROR: SSH login template not found: $SSH_LOGIN_FILE"
+            exit 1
+          fi
+          SSH_LOGIN_SECTION=$(cat "$SSH_LOGIN_FILE")
+
+          # Escape newlines for sed replacement
+          SSH_LOGIN_SECTION=$(printf '%s\n' "$SSH_LOGIN_SECTION" | sed ':a;N;$!ba;s/\n/\\n/g')
+
           sed \
             -e "s|{{TARGET_TAG}}|${TARGET_TAG}|g" \
             -e "s|{{SOURCE_TAG}}|${SOURCE_TAG}|g" \
@@ -377,6 +389,7 @@ jobs:
             -e "s|{{COMMIT}}|${COMMIT}|g" \
             -e "s|{{SHORT_SHA}}|${SHORT_SHA}|g" \
             -e "s|{{SSH_MODE}}|${SSH_MODE}|g" \
+            -e "s|{{SSH_LOGIN_SECTION}}|${SSH_LOGIN_SECTION}|g" \
             -e "s|{{REPO_URL}}|${REPO_URL}|g" \
             -e "s|{{REPO_SLUG}}|${REPO_SLUG}|g" \
             "$TEMPLATE" > "$OUTPUT"
@@ -407,7 +420,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.target.outputs.target_tag }}
-          name: "${{ github.event.inputs.image_type }} ${{ steps.target.outputs.target_tag }}"
+          name: ${{ steps.target.outputs.target_tag }}
           files: promote-assets/*
           body_path: ${{ steps.render_notes.outputs.notes_path }}
           prerelease: ${{ steps.channel.outputs.prerelease }}

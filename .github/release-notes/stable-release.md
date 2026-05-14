@@ -5,7 +5,7 @@
 | Version | `{{TARGET_TAG}}` |
 | Channel | `{{CHANNEL}}` |
 | Commit | [`{{SHORT_SHA}}`]({{REPO_URL}}/commit/{{COMMIT}}) |
-| SSH mode | `{{SSH_MODE}}` |
+| SSH mode | **`{{SSH_MODE}}`** |
 
 ---
 
@@ -31,28 +31,14 @@ sha256sum -c SHA256SUMS
 
 ---
 
-## SSH Login
+## SSH Access: {{SSH_MODE}}
 
-`public-hardened`
-- First boot asks for your SSH public key on the serial console.
-- Generate if needed:
+{{SSH_LOGIN_SECTION}}
 
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/id_medtech -N ""
-cat ~/.ssh/id_medtech.pub
-```
+---
 
-- Login:
+## Security
 
-```bash
-ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost
-```
-
-`internal-keyed`
-- Login with the private key matching the baked-in public key:
-
-```bash
-ssh -i <matching-private-key> -p 2222 medadmin@localhost
-```
-
-Password login and root login are disabled.
+- Password login is **disabled**
+- Root login is **disabled**
+- Only SSH key-based authentication is allowed

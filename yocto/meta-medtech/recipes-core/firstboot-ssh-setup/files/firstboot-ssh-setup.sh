@@ -10,7 +10,8 @@ MEDTECH_ADMIN_USER="medadmin"
 ADMIN_HOME="/home/${MEDTECH_ADMIN_USER}"
 SSH_DIR="${ADMIN_HOME}/.ssh"
 AUTHORIZED_KEYS="${SSH_DIR}/authorized_keys"
-PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-30}"
+PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-120}"
+CONSOLE_DEVICE=""
 
 log() {
     echo "[firstboot-ssh-setup] $*"
@@ -18,6 +19,56 @@ log() {
 
 error() {
     echo "[firstboot-ssh-setup] ERROR: $*" >&2
+}
+
+open_console_input() {
+    local dev=""
+
+    for dev in /dev/ttyAMA0 /dev/ttyS0 /dev/hvc0 /dev/console; do
+        if [ -c "$dev" ] && [ -r "$dev" ] && [ -w "$dev" ]; then
+            if exec 3<>"$dev"; then
+                CONSOLE_DEVICE="$dev"
+                log "Using console input device: ${CONSOLE_DEVICE}"
+                return 0
+            fi
+        fi
+    done
+
+    if [ -r /dev/stdin ]; then
+        exec 3</dev/stdin
+        CONSOLE_DEVICE="/dev/stdin"
+        log "Using console input fallback: ${CONSOLE_DEVICE}"
+        return 0
+    fi
+
+    error "No interactive console input is available"
+    return 1
+}
+
+read_console_line_with_timeout() {
+    local __result_var="$1"
+    local timeout_seconds="$2"
+    local line=""
+    local start_time=$SECONDS
+    local remaining=0
+
+    while true; do
+        remaining=$((timeout_seconds - (SECONDS - start_time)))
+        if [ "$remaining" -le 0 ]; then
+            return 124
+        fi
+
+        if IFS= read -r -t "$remaining" -u 3 line; then
+            if [ "$__result_var" != "_" ]; then
+                printf -v "$__result_var" '%s' "$line"
+            fi
+            return 0
+        fi
+
+        # On disconnected/non-interactive stdin, read can fail immediately.
+        # Keep polling until timeout so users can attach to serial and continue.
+        sleep 1
+    done
 }
 
 ensure_ssh_dir() {
@@ -59,8 +110,9 @@ Step 3: Copy the ENTIRE output from Step 2 and paste it below.
 
 Press Enter when ready to paste your SSH public key:
 EOF
-    if ! read -r -t "$PROMPT_TIMEOUT_SECONDS"; then
-        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s; skipping first-boot key prompt"
+    if ! read_console_line_with_timeout _ "$PROMPT_TIMEOUT_SECONDS"; then
+        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s; skipping for now (service will retry on next boot until key is provisioned)"
+        log "SSH remains key-only and no key is installed yet. Reboot and attach to serial console, or rebuild with a pre-provisioned public key."
         return 1
     fi
 }
@@ -68,7 +120,7 @@ EOF
 read_public_key() {
     local key=""
     log "Paste your SSH public key (single line):"
-    if ! read -r -t "$PROMPT_TIMEOUT_SECONDS" key; then
+    if ! read_console_line_with_timeout key "$PROMPT_TIMEOUT_SECONDS"; then
         error "Timed out waiting for SSH public key input"
         return 1
     fi
@@ -156,6 +208,8 @@ main() {
         log "SSH key already provisioned; skipping setup"
         return 0
     fi
+
+    open_console_input || return 0
     
     while true; do
         if ! prompt_for_key; then

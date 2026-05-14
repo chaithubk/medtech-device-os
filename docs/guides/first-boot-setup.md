@@ -2,6 +2,8 @@
 
 For public-hardened release images, SSH access is not enabled by default. This guide explains how to provision your SSH public key on first boot.
 
+This flow applies to both `core-image-minimal` and `core-image-medtech` images.
+
 ---
 
 ## What Happens on First Boot
@@ -131,6 +133,23 @@ Some terminal emulators have limited copy-paste support. Try:
 - Try Ctrl+Shift+V instead of Ctrl+V
 - Or manually type the key (not practical for long keys)
 - If on Windows with WSL: use WSL terminal emulator, not cmd.exe
+
+### Prompt skips immediately and boot continues to login
+
+If the wizard prints "Press Enter when ready..." and then immediately exits, the VM likely booted without an attached interactive serial input stream.
+
+Try this:
+
+1. Stop QEMU and relaunch in foreground serial mode:
+   ```bash
+   bash scripts/run-qemu.sh
+   ```
+2. Keep that same terminal focused while the first-boot prompt is shown.
+3. Press Enter once, paste your public key, then press Enter again.
+
+If you already reached login and cannot access `medadmin`, reboot the VM. The first-boot service will retry on next boot until `~/.ssh/authorized_keys` exists.
+
+For non-interactive CI/dev flows, pre-provision a key at build time instead of using the interactive wizard.
 
 ### Lost private key — cannot log in
 
