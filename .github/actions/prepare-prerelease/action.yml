@@ -75,6 +75,18 @@ runs:
 
         # Derive repo slug (owner/repo) from GITHUB_REPOSITORY
         REPO_SLUG="${GITHUB_REPOSITORY}"
+        SSH_MODE="${{ inputs.ssh_mode }}"
+
+        # Load SSH login content from mode-specific markdown file
+        SSH_LOGIN_FILE=".github/release-notes/ssh-login-${SSH_MODE}.md"
+        if [[ ! -f "$SSH_LOGIN_FILE" ]]; then
+          echo "ERROR: SSH login template not found: $SSH_LOGIN_FILE"
+          exit 1
+        fi
+        SSH_LOGIN_SECTION=$(cat "$SSH_LOGIN_FILE")
+
+        # Escape newlines for sed replacement
+        SSH_LOGIN_SECTION=$(printf '%s\n' "$SSH_LOGIN_SECTION" | sed ':a;N;$!ba;s/\n/\\n/g')
 
         sed \
           -e "s|{{VERSION}}|${{ steps.meta.outputs.tag }}|g" \
@@ -82,7 +94,8 @@ runs:
           -e "s|{{COMMIT}}|${GITHUB_SHA}|g" \
           -e "s|{{BRANCH}}|${GITHUB_REF_NAME}|g" \
           -e "s|{{IMAGE}}|${{ inputs.image_name }}|g" \
-          -e "s|{{SSH_MODE}}|${{ inputs.ssh_mode }}|g" \
+          -e "s|{{SSH_MODE}}|${SSH_MODE}|g" \
+          -e "s|{{SSH_LOGIN_SECTION}}|${SSH_LOGIN_SECTION}|g" \
           -e "s|{{REPO_URL}}|${{ steps.meta.outputs.repo_url }}|g" \
           -e "s|{{REPO_SLUG}}|${REPO_SLUG}|g" \
           "${{ inputs.template_path }}" > "${{ inputs.output_notes_path }}"
