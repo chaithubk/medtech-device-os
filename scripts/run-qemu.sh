@@ -18,6 +18,7 @@ echo "=== MedTech Device OS - QEMU Runner ==="
 IMAGE_NAME="core-image-medtech"
 GRAPHICS="-nographic"
 DRY_RUN=0
+SSH_PORT=2222
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -33,8 +34,12 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=1
             shift
             ;;
+        --ssh-port)
+            SSH_PORT="${2:-}"
+            shift 2
+            ;;
         -h|--help)
-            echo "Usage: bash scripts/run-qemu.sh [--graphics] [--image-name <pn>] [--dry-run]"
+            echo "Usage: bash scripts/run-qemu.sh [--graphics] [--image-name <pn>] [--ssh-port <port>] [--dry-run]"
             exit 0
             ;;
         *)
@@ -48,6 +53,51 @@ done
 if ! command -v qemu-system-aarch64 &> /dev/null; then
     echo "❌ qemu-system-aarch64 not found"
     exit 1
+fi
+
+if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+    echo "❌ Invalid --ssh-port value: $SSH_PORT"
+    echo "Expected an integer between 1 and 65535"
+    exit 2
+fi
+
+is_port_in_use() {
+    local port="$1"
+
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn "( sport = :$port )" 2>/dev/null | grep -q ":$port"
+        return
+    fi
+
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1
+        return
+    fi
+
+    # If no probe utility exists, assume free and let QEMU report conflicts.
+    return 1
+}
+
+if is_port_in_use "$SSH_PORT"; then
+    if [ "$SSH_PORT" -ne 2222 ]; then
+        echo "❌ Requested SSH host port is already in use: $SSH_PORT"
+        echo "Choose a different port with --ssh-port <port>"
+        exit 1
+    fi
+
+    for candidate in 2223 2224 2225 2226 2227 2228 2229 2230 2231 2232; do
+        if ! is_port_in_use "$candidate"; then
+            echo "⚠️  Host port 2222 is already in use; using $candidate instead"
+            SSH_PORT="$candidate"
+            break
+        fi
+    done
+
+    if [ "$SSH_PORT" -eq 2222 ]; then
+        echo "❌ Host port 2222 is in use and no fallback port is free in 2223-2232"
+        echo "Stop the process using 2222, or run with --ssh-port <free-port>"
+        exit 1
+    fi
 fi
 
 pick_latest_in_dir() {
@@ -202,7 +252,7 @@ echo ""
 echo "See: docs/guides/first-boot-setup.md for complete instructions."
 echo ""
 echo "Once SSH key is provisioned, connect from host:"
-echo "  ssh -i ~/.ssh/id_medtech -p 2222 medadmin@localhost"
+echo "  ssh -i ~/.ssh/id_medtech -p ${SSH_PORT} medadmin@localhost"
 echo ""
 echo "To quit QEMU: Ctrl+A then X (or: shutdown -h now)"
 echo ""
@@ -222,7 +272,7 @@ exec qemu-system-aarch64 \
     -drive id=disk0,file="$ROOTFS",if=none,format=raw \
     -device virtio-blk-pci,drive=disk0,romfile= \
     -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:02,romfile= \
-    -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
+    -netdev user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22 \
     -device qemu-xhci \
     -device usb-tablet \
     -device usb-kbd \

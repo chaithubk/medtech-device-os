@@ -10,7 +10,8 @@ MEDTECH_ADMIN_USER="medadmin"
 ADMIN_HOME="/home/${MEDTECH_ADMIN_USER}"
 SSH_DIR="${ADMIN_HOME}/.ssh"
 AUTHORIZED_KEYS="${SSH_DIR}/authorized_keys"
-PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-120}"
+# 0 means wait indefinitely (strict mode).
+PROMPT_TIMEOUT_SECONDS="${PROMPT_TIMEOUT_SECONDS:-0}"
 CONSOLE_DEVICE=""
 
 log() {
@@ -45,28 +46,63 @@ open_console_input() {
     return 1
 }
 
+console_print() {
+    # Write directly to the open console FD so messages appear even when
+    # kernel printk lines are interleaved on the same ttyAMA0 output.
+    printf '%s\r\n' "$*" >&3 2>/dev/null || printf '%s\n' "$*"
+}
+
 read_console_line_with_timeout() {
     local __result_var="$1"
     local timeout_seconds="$2"
     local line=""
     local start_time=$SECONDS
     local remaining=0
+    local elapsed=0
+    local has_timeout=0
+    local next_reminder=8   # print first reminder after 8 s
+
+    if [[ "$timeout_seconds" =~ ^[0-9]+$ ]] && [ "$timeout_seconds" -gt 0 ]; then
+        has_timeout=1
+    fi
 
     while true; do
-        remaining=$((timeout_seconds - (SECONDS - start_time)))
-        if [ "$remaining" -le 0 ]; then
-            return 124
+        elapsed=$((SECONDS - start_time))
+        if [ "$has_timeout" -eq 1 ]; then
+            remaining=$((timeout_seconds - elapsed))
+            if [ "$remaining" -le 0 ]; then
+                return 124
+            fi
+        else
+            remaining=-1
         fi
 
-        if IFS= read -r -t "$remaining" -u 3 line; then
+        if IFS= read -r -t 1 -u 3 line 2>/dev/null; then
             if [ "$__result_var" != "_" ]; then
                 printf -v "$__result_var" '%s' "$line"
             fi
             return 0
         fi
 
-        # On disconnected/non-interactive stdin, read can fail immediately.
-        # Keep polling until timeout so users can attach to serial and continue.
+        # read returned non-zero without reaching the timeout — the TTY device
+        # may not be ready yet this early in boot.  Print a periodic reminder
+        # so the user knows the wizard is still alive despite kernel messages
+        # flooding the console, then retry.
+        elapsed=$((SECONDS - start_time))
+        if [ "$elapsed" -ge "$next_reminder" ]; then
+            console_print ""
+            console_print "══════════════════════════════════════════════════════════════════════"
+            console_print " SSH Key Provisioning wizard is WAITING for your input."
+            console_print " Press Enter, then paste your SSH public key and press Enter again."
+            if [ "$has_timeout" -eq 1 ]; then
+                console_print " (${remaining}s remaining before this boot skips setup)"
+            else
+                console_print " (No timeout configured; boot remains blocked until key is entered)"
+            fi
+            console_print "══════════════════════════════════════════════════════════════════════"
+            next_reminder=$((next_reminder + 10))
+        fi
+
         sleep 1
     done
 }
@@ -109,10 +145,11 @@ Step 3: Copy the ENTIRE output from Step 2 and paste it below.
         (It should start with "ssh-ed25519", "ssh-rsa", or similar)
 
 Press Enter when ready to paste your SSH public key:
+(Kernel boot messages may appear on screen — the wizard is still waiting.)
 EOF
     if ! read_console_line_with_timeout _ "$PROMPT_TIMEOUT_SECONDS"; then
-        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s; skipping for now (service will retry on next boot until key is provisioned)"
-        log "SSH remains key-only and no key is installed yet. Reboot and attach to serial console, or rebuild with a pre-provisioned public key."
+        log "No serial input detected within ${PROMPT_TIMEOUT_SECONDS}s"
+        log "Reboot and attach to serial console, or set PROMPT_TIMEOUT_SECONDS=0 for strict blocking mode."
         return 1
     fi
 }
@@ -209,12 +246,21 @@ main() {
         return 0
     fi
 
-    open_console_input || return 0
+    while ! open_console_input; do
+        error "Console input device unavailable; retrying in 2s"
+        sleep 2
+    done
     
     while true; do
         if ! prompt_for_key; then
-            log "Continuing boot without interactive key provisioning"
-            return 0
+            if [ "$PROMPT_TIMEOUT_SECONDS" -gt 0 ]; then
+                log "Continuing boot without interactive key provisioning"
+                return 0
+            fi
+
+            error "Unexpected prompt failure in strict mode; retrying"
+            sleep 2
+            continue
         fi
         
         local public_key

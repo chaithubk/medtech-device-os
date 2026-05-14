@@ -14,7 +14,8 @@ When you boot a MedTech Device OS image for the first time:
 2. You paste one SSH public key line
 3. The key is stored as `medadmin` authorized key
 4. Password login remains disabled
-5. All future access uses SSH key-based authentication
+5. Boot remains blocked until key provisioning completes (strict mode)
+6. All future access uses SSH key-based authentication
 
 ---
 
@@ -55,6 +56,8 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHlahII4BW7uNRgtBfCADGQA7Lnfz/df5pz6OLmejKv0
 ## Step 2: Boot the MedTech Device OS Image
 
 Boot the image in QEMU or your target device. The first-boot setup wizard appears on `ttyAMA0` before a normal login prompt.
+
+In current strict mode builds, login prompts are held until the SSH key is provisioned.
 
 ---
 
@@ -111,6 +114,22 @@ You should now have shell access without entering a password.
 
 ## Troubleshooting
 
+### Provision key directly into a downloaded artifact (recommended fallback)
+
+If you already have a downloaded release artifact and want to avoid interactive first-boot setup, inject your public key directly into the ext4 image:
+
+```bash
+bash scripts/inject-ssh-key.sh \
+   --rootfs qemu-release/extracted/payload/image/core-image-medtech-qemuarm64-*.rootfs.ext4 \
+   --key ~/.ssh/id_medtech.pub
+```
+
+Then boot normally:
+
+```bash
+bash scripts/run-qemu.sh
+```
+
 ### "SSH key already provisioned; skipping setup"
 
 The first-boot setup already ran. The service only runs once. 
@@ -136,7 +155,7 @@ Some terminal emulators have limited copy-paste support. Try:
 
 ### Prompt skips immediately and boot continues to login
 
-If the wizard prints "Press Enter when ready..." and then immediately exits, the VM likely booted without an attached interactive serial input stream.
+If the wizard prints "Press Enter when ready..." and then immediately exits, you are likely running an older image that does not include the strict first-boot fixes.
 
 Try this:
 
@@ -147,7 +166,9 @@ Try this:
 2. Keep that same terminal focused while the first-boot prompt is shown.
 3. Press Enter once, paste your public key, then press Enter again.
 
-If you already reached login and cannot access `medadmin`, reboot the VM. The first-boot service will retry on next boot until `~/.ssh/authorized_keys` exists.
+If you already reached login and cannot access `medadmin`, either:
+- Rebuild and boot a newer image with strict first-boot provisioning fixes
+- Or inject the key directly with `scripts/inject-ssh-key.sh` and reboot
 
 For non-interactive CI/dev flows, pre-provision a key at build time instead of using the interactive wizard.
 
@@ -173,7 +194,8 @@ chmod 600 ~/backup/id_medtech.backup
 
 - No default login password is baked into the image for `medadmin`.
 - After SSH key provisioning, password login is **completely disabled** (`usermod -p '*' medadmin`).
-- The first-boot setup service runs only once (`ConditionFirstBoot=yes`).
+- The first-boot setup service runs until `~/.ssh/authorized_keys` exists (`ConditionPathExists=!/home/medadmin/.ssh/authorized_keys`).
+- In strict mode builds, boot is intentionally blocked until a valid key is provisioned.
 - For production deployments, provision public keys via build-time or controlled first-boot process.
 
 ---

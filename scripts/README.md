@@ -65,6 +65,39 @@ bash scripts/download-and-run-qemu.sh --dry-run
 
 ---
 
+### `inject-ssh-key.sh`
+
+**Inject your SSH public key directly into a release ext4 image (host-side workaround).**
+
+- Useful when you want key-based access without interactive first-boot entry
+- Works with extracted release artifacts and local build ext4 images
+- Requires Linux host loopback mount support (runs with `sudo` when needed)
+
+```bash
+# Inject into a specific extracted release rootfs
+bash scripts/inject-ssh-key.sh \
+  --rootfs qemu-release/extracted/payload/image/core-image-medtech-qemuarm64-*.rootfs.ext4 \
+  --key ~/.ssh/id_medtech.pub
+
+# Auto-detect rootfs and key
+bash scripts/inject-ssh-key.sh
+
+# Preview only
+bash scripts/inject-ssh-key.sh --dry-run
+```
+
+---
+
+### `cleanup-qemu-sessions.sh`
+
+**Minimal helper to stop stale QEMU sessions that hold rootfs image locks.**
+
+```bash
+bash scripts/cleanup-qemu-sessions.sh
+```
+
+---
+
 ## 👨‍💻 Developer Scripts (build inside dev container)
 
 ### Canonical Local Build Path
@@ -183,13 +216,15 @@ bash scripts/build-robust.sh
 
 **Boot the locally-built image in QEMU** (after `bitbake core-image-medtech`).
 
-- Validates kernel and rootfs exist in the deploy directory
+- Auto-detects image source from local build output or extracted release payload
+- Validates kernel and rootfs image files
 - Launches `qemu-system-aarch64` with proper device configuration
-- SSH available on `localhost:2222`
+- SSH port defaults to `localhost:2222` and auto-falls back when port is busy
 
 ```bash
 bash scripts/run-qemu.sh           # nographic (terminal console)
 bash scripts/run-qemu.sh --graphics  # with GTK display
+bash scripts/run-qemu.sh --ssh-port 2244
 ```
 
 **Inside QEMU:**
@@ -201,6 +236,7 @@ mosquitto_sub -t "medtech/#" -v
 
 **SSH from host:**
 ```bash
+# Use the exact port printed by run-qemu.sh
 ssh -p 2222 medadmin@localhost
 ```
 
