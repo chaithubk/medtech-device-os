@@ -2,7 +2,7 @@
 Description=First-Boot SSH Key Provisioning Setup
 Documentation=man:firstboot-ssh-setup(1)
 DefaultDependencies=no
-Before=getty@ttyAMA0.service
+Before=serial-getty@ttyAMA0.service getty@tty1.service getty.target
 ConditionPathExists=!/home/medadmin/.ssh/authorized_keys
 
 [Service]

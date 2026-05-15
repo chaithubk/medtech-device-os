@@ -426,4 +426,4 @@ jobs:
           prerelease: ${{ steps.channel.outputs.prerelease }}
           make_latest: false
           draft: false
-          generate_release_notes: false
+          generate_release_notes: true
