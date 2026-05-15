@@ -84,6 +84,15 @@ on:
         options:
           - release
           - prerelease
+      ssh_mode_override:
+        description: "Optional override for release notes SSH mode. Use when promoting older artifacts missing ssh_mode metadata."
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - public-hardened
+          - internal-keyed
 
 permissions:
   contents: write
@@ -110,6 +119,7 @@ jobs:
       RELEASE_STRATEGY: ${{ github.event.inputs.release_strategy }}
       CUSTOM_VERSION: ${{ github.event.inputs.version }}
       RELEASE_CHANNEL: ${{ github.event.inputs.release_channel }}
+      SSH_MODE_OVERRIDE: ${{ github.event.inputs.ssh_mode_override }}
 
     steps:
       - uses: actions/checkout@v4
@@ -315,6 +325,61 @@ jobs:
         uses: ./.github/actions/resolve-manifest-meta
         with:
           manifest_dir: promote-assets
+          expected_image: ${{ env.IMAGE_TYPE }}
+
+      - name: Write resolved metadata summary
+        run: |
+          {
+            echo "## Resolved Build Metadata"
+            echo "- Resolved manifest: ${{ steps.source_meta.outputs.manifest_path }}"
+            echo "- Resolved image: ${{ steps.source_meta.outputs.image }}"
+            echo "- Resolved commit: ${{ steps.source_meta.outputs.commit }}"
+            echo "- Resolved ssh_mode: ${{ steps.source_meta.outputs.ssh_mode }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve effective SSH mode
+        id: effective_ssh
+        run: |
+          set -euo pipefail
+          RESOLVED_MODE="${{ steps.source_meta.outputs.ssh_mode }}"
+          OVERRIDE_MODE="${SSH_MODE_OVERRIDE:-auto}"
+
+          case "$OVERRIDE_MODE" in
+            auto|public-hardened|internal-keyed)
+              ;;
+            *)
+              echo "Invalid ssh_mode_override: $OVERRIDE_MODE"
+              exit 1
+              ;;
+          esac
+
+          if [[ "$OVERRIDE_MODE" != "auto" ]]; then
+            FINAL_MODE="$OVERRIDE_MODE"
+            SOURCE_LABEL="override"
+          else
+            FINAL_MODE="$RESOLVED_MODE"
+            SOURCE_LABEL="manifest"
+          fi
+
+          if [[ -z "$FINAL_MODE" ]]; then
+            echo "Could not resolve ssh_mode from manifest metadata."
+            echo "For older artifacts, re-run promotion with ssh_mode_override=public-hardened or internal-keyed."
+            exit 1
+          fi
+
+          case "$FINAL_MODE" in
+            public-hardened|internal-keyed)
+              ;;
+            *)
+              echo "Unsupported effective ssh_mode: $FINAL_MODE"
+              exit 1
+              ;;
+          esac
+
+          echo "ssh_mode=$FINAL_MODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "- Effective ssh_mode: $FINAL_MODE (${SOURCE_LABEL})"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate stable release notes template
         run: |
@@ -356,7 +421,7 @@ jobs:
           IMAGE="${{ steps.source_meta.outputs.image }}"
           COMMIT="${{ steps.source_meta.outputs.commit }}"
           SHORT_SHA="${{ steps.source_meta.outputs.short_sha }}"
-          SSH_MODE="${{ steps.source_meta.outputs.ssh_mode }}"
+          SSH_MODE="${{ steps.effective_ssh.outputs.ssh_mode }}"
 
           for value_name in TARGET_TAG CHANNEL IMAGE COMMIT SHORT_SHA SSH_MODE REPO_URL; do
             if [[ -z "${!value_name}" ]]; then

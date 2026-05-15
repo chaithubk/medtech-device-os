@@ -699,7 +699,7 @@ jobs:
           image_name: ${{ env.CI_BUILD_IMAGE }}
           machine: qemuarm64
           commit: ${{ github.sha }}
-          ssh_mode: ${{ github.event.inputs.ssh_access_mode || 'public-hardened' }}
+          ssh_mode: ${{ env.SSH_ACCESS_MODE || 'public-hardened' }}
 
       - name: Prepare private Vigiles bundle
         if: env.VIGILES_ENABLED == 'true'
