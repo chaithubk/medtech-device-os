@@ -41,6 +41,13 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           GROUPED_RELEASE_TAGS: ${{ github.event.inputs.grouped_release_tags }}
 
+      - name: Get commit of first sub-release tag
+        id: get_commit
+        run: |
+          FIRST_TAG=$(echo "${{ github.event.inputs.grouped_release_tags }}" | cut -d',' -f1 | xargs)
+          COMMIT=$(git rev-list -n 1 "$FIRST_TAG")
+          echo "commit_sha=$COMMIT" >> "$GITHUB_OUTPUT"
+
       - name: Upload combined release notes
         uses: actions/upload-artifact@v4
         with:
@@ -56,5 +63,6 @@ jobs:
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
           token: ${{ secrets.RELEASE_PUSH_TOKEN != '' && secrets.RELEASE_PUSH_TOKEN || github.token }}
+          target_commitish: ${{ steps.get_commit.outputs.commit_sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
