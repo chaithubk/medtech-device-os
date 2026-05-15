@@ -70,6 +70,8 @@ jobs:
 
           echo "Resolved ${FIRST_TAG} -> ${COMMIT_SHA}"
           echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN != '' && secrets.RELEASE_PUSH_TOKEN || github.token }}
 
       - name: Upload combined release notes
         uses: actions/upload-artifact@v4
