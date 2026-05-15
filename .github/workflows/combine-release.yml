@@ -21,10 +21,6 @@ on:
         description: 'Comma-separated release tags to combine (e.g., core-image-minimal-v1.0.0,core-image-medtech-v1.0.0). If empty, defaults to core-image-minimal/core-image-medtech for release_version.'
         required: false
         default: ''
-      artifact_names:
-        description: 'Optional comma-separated artifact names to include in bundled links. If empty, include all assets.'
-        required: false
-        default: ''
 
 jobs:
   combine:
@@ -44,7 +40,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           GROUPED_RELEASE_TAGS: ${{ github.event.inputs.grouped_release_tags }}
-          ARTIFACT_NAMES: ${{ github.event.inputs.artifact_names }}
 
       - name: Upload combined release notes
         uses: actions/upload-artifact@v4
@@ -56,7 +51,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.release_version }}
-          name: Device OS ${{ github.event.inputs.release_version }} Multi-Image Release
+          name: ${{ github.event.inputs.release_version }}
           body_path: combined-release.md
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
