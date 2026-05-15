@@ -38,33 +38,11 @@ jobs:
       - name: Prepare combined release notes from template
         id: notes
         run: |
-          set -e
-          cp .github/release-notes/combined-release-template.md combined-release.md
-
-          # Generate summary table
-          summary_table="| Image | SSH Mode | Artifact |\n|-------|----------|----------|"
-          for f in */*; do
-            img=$(echo "$f" | cut -d'-' -f1-3 | sed 's#/.*$##')
-            mode=$(echo "$f" | grep -oE '(public-hardened|internal-keyed)' || echo '-')
-            summary_table+="\n| $img | $mode | [$(basename "$f")]($f) |"
-          done
-
-          # Generate image notes
-          image_notes=""
-          for img in core-image-minimal core-image-medtech; do
-            tag="$img-${{ github.event.inputs.release_version }}"
-            image_notes+="\n### $img\n"
-            note=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "_No release notes found for $tag_")
-            image_notes+="$note\n"
-          done
-
-          # Replace placeholders in template
-          sed -i "s|{{RELEASE_VERSION}}|${{ github.event.inputs.release_version }}|g" combined-release.md
-          sed -i "s|{{SUMMARY_TABLE}}|$summary_table|g" combined-release.md
-          sed -i "s|{{IMAGE_NOTES}}|$image_notes|g" combined-release.md
+          python .github/scripts/generate-combined-release.py
           cat combined-release.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
 
       - name: Upload combined release notes
         uses: actions/upload-artifact@v4

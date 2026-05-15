@@ -6,10 +6,15 @@
 
 ---
 
-## Image Release Notes
+## Image Quick Start & Details
 
-{{IMAGE_NOTES}}
+{{IMAGE_DETAILS}}
 
 ---
 
-*This is an automated combined release. See individual image releases for detailed changelogs and instructions.*
+## What's Changed
+
+{{WHATS_CHANGED}}
+
+---
+*This is an automated combined release. See individual image releases for more details.*
