@@ -1,0 +1,84 @@
+# Combined Release Workflow
+# This workflow bundles multiple release artifacts and generates a summary.
+
+
+name: Multi-Image Release Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+      release_type:
+        description: 'Type of release (release/prerelease)'
+        required: true
+        default: 'release'
+      artifact_names:
+        description: 'Comma-separated list of artifact names to combine'
+        required: true
+
+jobs:
+  combine:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        run: |
+          IFS=',' read -ra NAMES <<< "${{ github.event.inputs.artifact_names }}"
+          for name in "${NAMES[@]}"; do
+            echo "Downloading artifact: $name"
+            gh run download --name "$name" || echo "Artifact $name not found"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare combined release notes from template
+        id: notes
+        run: |
+          set -e
+          cp .github/release-notes/combined-release-template.md combined-release.md
+
+          # Generate summary table
+          summary_table="| Image | SSH Mode | Artifact |\n|-------|----------|----------|"
+          for f in */*; do
+            img=$(echo "$f" | cut -d'-' -f1-3 | sed 's#/.*$##')
+            mode=$(echo "$f" | grep -oE '(public-hardened|internal-keyed)' || echo '-')
+            summary_table+="\n| $img | $mode | [$(basename "$f")]($f) |"
+          done
+
+          # Generate image notes
+          image_notes=""
+          for img in core-image-minimal core-image-medtech; do
+            tag="$img-${{ github.event.inputs.release_version }}"
+            image_notes+="\n### $img\n"
+            note=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "_No release notes found for $tag_")
+            image_notes+="$note\n"
+          done
+
+          # Replace placeholders in template
+          sed -i "s|{{RELEASE_VERSION}}|${{ github.event.inputs.release_version }}|g" combined-release.md
+          sed -i "s|{{SUMMARY_TABLE}}|$summary_table|g" combined-release.md
+          sed -i "s|{{IMAGE_NOTES}}|$image_notes|g" combined-release.md
+          cat combined-release.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload combined release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-release-md
+          path: combined-release.md
+
+      - name: Create multi-image release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_version }}
+          name: Device OS ${{ github.event.inputs.release_version }} Multi-Image Release
+          body_path: combined-release.md
+          draft: false
+          prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
