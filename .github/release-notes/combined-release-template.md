@@ -1,8 +1,8 @@
-# Device OS {{RELEASE_VERSION}} Multi-Image Release
+# {{RELEASE_VERSION}} 
 
-## Summary
+## Bundled Image Releases
 
-{{SUMMARY_TABLE}}
+{{BUNDLE_LINKS}}
 
 ---
 

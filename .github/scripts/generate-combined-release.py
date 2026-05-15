@@ -1,58 +1,148 @@
+import json
 import os
 import re
 import subprocess
-import sys
 
 TEMPLATE_PATH = ".github/release-notes/combined-release-template.md"
 OUTPUT_PATH = "combined-release.md"
+IMAGES = ["core-image-minimal", "core-image-medtech"]
 
-release_version = os.environ.get("RELEASE_VERSION")
-artifacts_dir = os.getcwd()
-images = ["core-image-minimal", "core-image-medtech"]
 
-# Generate summary table
-summary_table = ["| Image | SSH Mode | Artifact |", "|-------|----------|----------|"]
-image_details = []
-whats_changed_sections = set()
+def parse_csv_env(value):
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
-# Find artifact folders (assume artifacts are in subdirs)
-for f in sorted([x for x in os.listdir(artifacts_dir) if os.path.isdir(x)]):
-    for artifact in os.listdir(f):
-        img = "-".join(artifact.split("-")[:3])
-        mode_match = re.search(r"(public-hardened|internal-keyed)", artifact)
-        mode = mode_match.group(1) if mode_match else "-"
-        summary_table.append(f"| {img} | {mode} | [{artifact}]({f}/{artifact}) |")
 
-for img in images:
-    tag = f"{img}-{release_version}"
-    try:
-        note = subprocess.check_output([
-            "gh", "release", "view", tag, "--json", "body", "--jq", ".body"
-        ], text=True).strip()
-    except subprocess.CalledProcessError:
-        note = f"_No release notes found for {tag}_"
-    # Extract What's Changed section
-    match = re.search(r"(?s)(##? What's Changed.*?)(?:\n##|\Z)", note)
+def run_gh_api(path):
+    result = subprocess.check_output(["gh", "api", path], text=True)
+    return json.loads(result)
+
+
+def extract_whats_changed_items(body):
+    match = re.search(r"(?is)^##\s*What's Changed\s*$\n(.*?)(?=^##\s|\Z)", body, re.MULTILINE)
+    if not match:
+        return []
+    section = match.group(1)
+    items = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("* ") or stripped.startswith("- "):
+            items.append(stripped)
+    return items
+
+
+def strip_whats_changed(body):
+    return re.sub(r"(?is)^##\s*What's Changed\s*$\n.*?(?=^##\s|\Z)", "", body, flags=re.MULTILINE).strip()
+
+
+def release_channel_text(release):
+    return "prerelease" if release.get("prerelease") else "release"
+
+
+def build_bundle_links(releases):
+    artifact_filter = set(parse_csv_env(os.environ.get("ARTIFACT_NAMES", "")))
+    lines = []
+    for rel in releases:
+        image = rel["image"]
+        tag = rel["tag_name"]
+        channel = rel["channel"]
+        html_url = rel["html_url"]
+        lines.append(f"### {image}")
+        lines.append(f"- Release: [{tag}]({html_url}) ({channel})")
+        assets = rel.get("assets", [])
+        if artifact_filter:
+            assets = [asset for asset in assets if asset.get("name", "") in artifact_filter]
+        if assets:
+            lines.append("- Artifacts:")
+            for asset in assets:
+                name = asset.get("name", "asset")
+                download_url = asset.get("browser_download_url") or asset.get("url", "")
+                size_mb = asset.get("size", 0) / (1024 * 1024)
+                lines.append(f"  - [{name}]({download_url}) ({size_mb:.1f} MB)")
+        else:
+            if artifact_filter:
+                lines.append("- Artifacts: _none matched the artifact_names filter_")
+            else:
+                lines.append("- Artifacts: _none found_")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def infer_image_from_tag(tag):
+    match = re.match(r"^(.*)-v\d+.*$", tag)
     if match:
-        whats_changed_sections.add(match.group(1).strip())
-    # Remove What's Changed from image details
-    note_wo_wc = re.sub(r"(?s)##? What's Changed.*", "", note).strip()
-    image_details.append(f"### {img}\n\n{note_wo_wc}\n")
+        return match.group(1)
+    return tag
 
-# Combine What's Changed sections, deduplicated
-whats_changed = '\n\n'.join(sorted(whats_changed_sections)) if whats_changed_sections else '_No changes found._'
 
-# Read template
-with open(TEMPLATE_PATH, 'r') as f:
-    template = f.read()
+def main():
+    release_version = os.environ.get("RELEASE_VERSION", "").strip()
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    grouped_release_tags = parse_csv_env(os.environ.get("GROUPED_RELEASE_TAGS", ""))
 
-# Replace placeholders
-out = template.replace('{{RELEASE_VERSION}}', release_version)
-out = out.replace('{{SUMMARY_TABLE}}', '\n'.join(summary_table))
-out = out.replace('{{IMAGE_DETAILS}}', '\n'.join(image_details))
-out = out.replace('{{WHATS_CHANGED}}', whats_changed)
+    if not release_version:
+        raise RuntimeError("RELEASE_VERSION is required")
+    if not repository:
+        raise RuntimeError("GITHUB_REPOSITORY is required")
 
-with open(OUTPUT_PATH, 'w') as f:
-    f.write(out)
+    tags = grouped_release_tags if grouped_release_tags else [f"{image}-{release_version}" for image in IMAGES]
 
-print(f"Combined release notes written to {OUTPUT_PATH}")
+    releases = []
+    image_details = []
+    seen_changes = set()
+    merged_changes = []
+
+    for tag in tags:
+        image = infer_image_from_tag(tag)
+        api_path = f"repos/{repository}/releases/tags/{tag}"
+        try:
+            rel = run_gh_api(api_path)
+        except subprocess.CalledProcessError:
+            rel = {
+                "tag_name": tag,
+                "name": tag,
+                "html_url": "",
+                "prerelease": False,
+                "assets": [],
+                "body": f"_No release notes found for {tag}_",
+            }
+
+        body = rel.get("body") or ""
+        stripped_details = strip_whats_changed(body)
+        image_details.append(f"### {image}\n\n{stripped_details}\n")
+
+        for item in extract_whats_changed_items(body):
+            if item not in seen_changes:
+                seen_changes.add(item)
+                merged_changes.append(item)
+
+        releases.append(
+            {
+                "image": image,
+                "tag_name": rel.get("tag_name", tag),
+                "html_url": rel.get("html_url", ""),
+                "channel": release_channel_text(rel),
+                "assets": rel.get("assets", []),
+            }
+        )
+
+    bundle_links = build_bundle_links(releases)
+    whats_changed = "\n".join(merged_changes).strip() if merged_changes else "_No changes found._"
+
+    with open(TEMPLATE_PATH, "r", encoding="utf-8") as file:
+        template = file.read()
+
+    output = template.replace("{{RELEASE_VERSION}}", release_version)
+    output = output.replace("{{BUNDLE_LINKS}}", bundle_links)
+    output = output.replace("{{IMAGE_DETAILS}}", "\n".join(image_details).strip())
+    output = output.replace("{{WHATS_CHANGED}}", whats_changed)
+
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as file:
+        file.write(output)
+
+    print(f"Combined release notes written to {OUTPUT_PATH}")
+
+
+if __name__ == "__main__":
+    main()
