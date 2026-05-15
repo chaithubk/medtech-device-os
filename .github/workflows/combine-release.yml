@@ -44,9 +44,32 @@ jobs:
       - name: Get commit of first sub-release tag
         id: get_commit
         run: |
-          FIRST_TAG=$(echo "${{ github.event.inputs.grouped_release_tags }}" | cut -d',' -f1 | xargs)
-          COMMIT=$(git rev-list -n 1 "$FIRST_TAG")
-          echo "commit_sha=$COMMIT" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          GROUPED_TAGS="${{ github.event.inputs.grouped_release_tags }}"
+          RELEASE_VERSION="${{ github.event.inputs.release_version }}"
+
+          if [[ -z "${GROUPED_TAGS// }" ]]; then
+            GROUPED_TAGS="core-image-minimal-${RELEASE_VERSION},core-image-medtech-${RELEASE_VERSION}"
+          fi
+
+          FIRST_TAG=$(echo "$GROUPED_TAGS" | cut -d',' -f1 | xargs)
+          if [[ -z "$FIRST_TAG" ]]; then
+            echo "Unable to determine first sub-release tag from grouped_release_tags input." >&2
+            exit 1
+          fi
+
+          REF_TYPE=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${FIRST_TAG}" --jq '.object.type')
+          REF_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${FIRST_TAG}" --jq '.object.sha')
+
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            COMMIT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${REF_SHA}" --jq '.object.sha')
+          else
+            COMMIT_SHA="$REF_SHA"
+          fi
+
+          echo "Resolved ${FIRST_TAG} -> ${COMMIT_SHA}"
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Upload combined release notes
         uses: actions/upload-artifact@v4
