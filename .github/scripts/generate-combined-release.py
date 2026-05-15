@@ -41,31 +41,17 @@ def release_channel_text(release):
 
 
 def build_bundle_links(releases):
-    artifact_filter = set(parse_csv_env(os.environ.get("ARTIFACT_NAMES", "")))
     lines = []
     for rel in releases:
         image = rel["image"]
         tag = rel["tag_name"]
         channel = rel["channel"]
         html_url = rel["html_url"]
-        lines.append(f"### {image}")
-        lines.append(f"- Release: [{tag}]({html_url}) ({channel})")
-        assets = rel.get("assets", [])
-        if artifact_filter:
-            assets = [asset for asset in assets if asset.get("name", "") in artifact_filter]
-        if assets:
-            lines.append("- Artifacts:")
-            for asset in assets:
-                name = asset.get("name", "asset")
-                download_url = asset.get("browser_download_url") or asset.get("url", "")
-                size_mb = asset.get("size", 0) / (1024 * 1024)
-                lines.append(f"  - [{name}]({download_url}) ({size_mb:.1f} MB)")
+        if html_url:
+            lines.append(f"### [{image}]({html_url})")
         else:
-            if artifact_filter:
-                lines.append("- Artifacts: _none matched the artifact_names filter_")
-            else:
-                lines.append("- Artifacts: _none found_")
-        lines.append("")
+            lines.append(f"### {image}")
+            lines.append(f"- [{image}]({html_url})")
     return "\n".join(lines).strip()
 
 

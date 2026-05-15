@@ -1,5 +1,3 @@
-# {{RELEASE_VERSION}} 
-
 ## Bundled Image Releases
 
 {{BUNDLE_LINKS}}
