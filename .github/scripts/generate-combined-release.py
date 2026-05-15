@@ -44,14 +44,11 @@ def build_bundle_links(releases):
     lines = []
     for rel in releases:
         image = rel["image"]
-        tag = rel["tag_name"]
-        channel = rel["channel"]
         html_url = rel["html_url"]
         if html_url:
-            lines.append(f"### [{image}]({html_url})")
-        else:
-            lines.append(f"### {image}")
             lines.append(f"- [{image}]({html_url})")
+        else:
+            lines.append(f"- {image}")
     return "\n".join(lines).strip()
 
 
